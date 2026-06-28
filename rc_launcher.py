@@ -20,6 +20,7 @@ import socket
 import subprocess
 import time
 from datetime import datetime
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
@@ -151,12 +152,38 @@ def death_reason(sess: str) -> str:
     return last[:80] or "exited immediately"
 
 
+def snapshot(proj: str) -> str | None:
+    """Non-destructive git checkpoint before a remote turn can touch the tree.
+
+    Opt-in via RC_SNAPSHOT — same-dir means a phone-driven turn lands on the same
+    working tree you edit locally, so this parks the current tree+index as a stash
+    commit under refs/rc-snapshots/ (kept off `git stash list`). Recover with
+    `git stash apply <ref>`. Returns the ref, or None if off / clean / not a repo.
+    """
+    if not os.environ.get("RC_SNAPSHOT"):
+        return None
+    path = os.path.join(PARENT, proj)
+    if subprocess.run([GIT, "-C", path, "rev-parse", "--is-inside-work-tree"],
+                      capture_output=True).returncode != 0:
+        return None
+    sha = subprocess.run([GIT, "-C", path, "stash", "create"],
+                         capture_output=True, text=True).stdout.strip()
+    if not sha:
+        return None
+    ref = f"refs/rc-snapshots/{proj}/{int(time.time())}"
+    subprocess.run([GIT, "-C", path, "update-ref", "-m", f"rc-snapshot {proj}", ref, sha],
+                   capture_output=True)
+    return ref
+
+
 def launch(proj: str) -> tuple[str, str | None]:
     sess = f"rc-{proj}"
     if subprocess.run([TMUX, "has-session", "-t", sess],
                       capture_output=True).returncode == 0:
         return "already", None
     ensure_trusted(proj)
+    if snap := snapshot(proj):
+        log_event("snap", proj, snap)
     # Always pass --spawn explicitly: omitting it (even for the same-dir
     # default) makes `claude` prompt for spawn mode on a project's first run,
     # which hangs forever in a headless tmux session.
@@ -305,8 +332,7 @@ text-align:center}
 <ul id=list></ul>
 <div id=toast></div>
 <script>
-const TOKEN=__TOKEN__, PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__),
-  STARTING=new Set(), T=encodeURIComponent(TOKEN);
+const PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__), STARTING=new Set();
 const NAME_RE=/^[A-Za-z0-9._-]+$/;
 let LOGIN=__LOGIN__, STATES=__STATES__;
 const $=s=>document.querySelector(s), RK='rc_recent';
@@ -358,7 +384,7 @@ async function go(n){
   if(RUNNING.has(n)){toast(n+' already live');return;}
   STARTING.add(n);render();
   try{
-    const r=await fetch('/launch?json=1&token='+T+'&proj='+encodeURIComponent(n));
+    const r=await fetch('/launch?json=1&proj='+encodeURIComponent(n));
     const j=await r.json();
     STARTING.delete(n);
     if(j.status==='failed'){render();toast('\\u2717 '+n+': '+(j.reason||'failed to start'));return;}
@@ -370,7 +396,7 @@ async function stopSess(n){
   if(!confirm('Close session '+n+'?\\nThis ends the Claude session and its context.'))return;
   toast('closing '+n+'\\u2026');
   try{
-    const r=await fetch('/stop?json=1&token='+T+'&proj='+encodeURIComponent(n));
+    const r=await fetch('/stop?json=1&proj='+encodeURIComponent(n));
     await r.json();
     RUNNING.delete(n);render();
     toast('\\u2715 closed '+n);
@@ -382,7 +408,7 @@ async function createProj(n){
   $('#q').value=n;render();
   const drop=()=>{const i=PROJECTS.indexOf(n);if(i>=0)PROJECTS.splice(i,1);};
   try{
-    const r=await fetch('/create?json=1&token='+T+'&proj='+encodeURIComponent(n));
+    const r=await fetch('/create?json=1&proj='+encodeURIComponent(n));
     const j=await r.json();
     STARTING.delete(n);
     if(j.status!=='created'&&j.status!=='exists'){
@@ -397,7 +423,7 @@ async function createProj(n){
 }
 async function poll(){
   try{
-    const r=await fetch('/status?token='+T);const j=await r.json();
+    const r=await fetch('/status');const j=await r.json();
     RUNNING.clear();j.running.forEach(n=>RUNNING.add(n));
     STATES=j.states||{};
     LOGIN=j.login;authBar();render();
@@ -417,13 +443,13 @@ $('#newbtn').onclick=()=>{
   if(PROJECTS.includes(n)){toast(n+' already exists \\u2014 tap it to start');return;}
   createProj(n);};
 authBar();render();setInterval(poll,5000);
+if(location.search)history.replaceState({},'',location.pathname);
 </script>
 </body></html>"""
 
 
 def page() -> bytes:
     return (PAGE
-            .replace("__TOKEN__", json.dumps(TOKEN))
             .replace("__PROJECTS__", json.dumps(projects()))
             .replace("__RUNNING__", json.dumps(sorted(running())))
             .replace("__STATES__", json.dumps(session_states()))
@@ -432,10 +458,16 @@ def page() -> bytes:
 
 
 class Handler(BaseHTTPRequestHandler):
-    def _send(self, code: int, body: bytes, ctype: str = "text/html; charset=utf-8"):
+    def _send(self, code: int, body: bytes, ctype: str = "text/html; charset=utf-8",
+              set_cookie: bool = False):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Cache-Control", "no-store")
+        if set_cookie:
+            self.send_header(
+                "Set-Cookie",
+                f"rc_token={TOKEN}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000",
+            )
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -443,13 +475,23 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, payload: dict):
         self._send(200, json.dumps(payload).encode(), "application/json")
 
+    def _authed(self, q: dict) -> bool:
+        """Token via ?token= (first contact / bookmark) or the rc_token cookie set
+        on that first load, so the token stays out of later request URLs and logs."""
+        if not TOKEN:
+            return False
+        if q.get("token", [""])[0] == TOKEN:
+            return True
+        cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        return "rc_token" in cookie and cookie["rc_token"].value == TOKEN
+
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        if not TOKEN or q.get("token", [""])[0] != TOKEN:
+        if not self._authed(q):
             return self._send(403, b"forbidden")
         if u.path == "/":
-            return self._send(200, page())
+            return self._send(200, page(), set_cookie=True)
         if u.path == "/status":
             return self._json({"running": sorted(running()), "login": login_status(),
                                "states": session_states()})

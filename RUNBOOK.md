@@ -5,6 +5,11 @@ any one of your ~57 project directories, with that project's full context —
 without SSH, without leaving VS Code running, and without the Mac running
 Tailscale.
 
+> **Host:** this runbook is written for the macOS (launchd) host. `install.sh`
+> also targets Linux via `systemd --user`; the daily-use, security, and design
+> sections apply to both. Only the launchd, `pmset`, and auto-login specifics are
+> macOS-only.
+
 ## How it works
 
 - A tiny always-on web server on the Mac (`rc_launcher.py`) shows a searchable

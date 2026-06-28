@@ -9,11 +9,14 @@ checks `claude auth status`, and notifies on failure so you fix it before you
 need it. Healthy runs just append a line to the log and stay quiet.
 
 Set RC_NOTIFY_URL to an ntfy topic (or any webhook) to also get a phone push;
-unset, it falls back to a local macOS notification only.
+unset, it falls back to a local desktop notification (macOS or Linux) only.
 """
 
+import contextlib
 import json
 import os
+import platform
+import shutil
 import subprocess
 import urllib.request
 from datetime import datetime
@@ -35,18 +38,17 @@ def auth_state() -> tuple[str, str]:
 
 
 def notify(title: str, msg: str) -> None:
-    subprocess.run(
-        ["osascript", "-e", f"display notification {msg!r} with title {title!r}"],
-        capture_output=True,
-    )
-    if NOTIFY_URL:
-        req = urllib.request.Request(
-            NOTIFY_URL, data=msg.encode(), headers={"Title": title}
+    if platform.system() == "Darwin":
+        subprocess.run(
+            ["osascript", "-e", f"display notification {msg!r} with title {title!r}"],
+            capture_output=True,
         )
-        try:
+    elif shutil.which("notify-send"):
+        subprocess.run(["notify-send", title, msg], capture_output=True)
+    if NOTIFY_URL:
+        req = urllib.request.Request(NOTIFY_URL, data=msg.encode(), headers={"Title": title})
+        with contextlib.suppress(OSError):
             urllib.request.urlopen(req, timeout=10)
-        except OSError:
-            pass
 
 
 if __name__ == "__main__":
