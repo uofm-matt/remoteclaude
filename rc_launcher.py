@@ -38,6 +38,10 @@ MT = ZoneInfo("America/Denver")
 
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
+STATE_DIR = os.path.expanduser(os.environ.get("RC_STATE_DIR", "~/.cache/rc-state"))
+STATE_TTL = float(os.environ.get("RC_STATE_TTL", "3600"))
+_RANK = {"working": 3, "waiting": 2, "idle": 1}
+
 
 def log_event(action: str, proj: str, result: str) -> None:
     """One audit line per launch/stop to StandardOutPath (/tmp/rc-launcher.log)."""
@@ -109,6 +113,30 @@ def running() -> set[str]:
     return {line[3:] for line in out.splitlines() if line.startswith("rc-")}
 
 
+def session_states() -> dict[str, str]:
+    """{project: most-urgent turn state} from the files rc_state_hook.py writes,
+    so the UI can show working/waiting, not just live. Stale files are ignored."""
+    out: dict[str, str] = {}
+    now = time.time()
+    try:
+        names = os.listdir(STATE_DIR)
+    except FileNotFoundError:
+        return out
+    for n in names:
+        if not n.endswith(".json"):
+            continue
+        try:
+            d = json.load(open(os.path.join(STATE_DIR, n)))
+        except (json.JSONDecodeError, OSError):
+            continue
+        st = d.get("state")
+        proj = d.get("project") or ""
+        if st in _RANK and proj and now - d.get("ts", 0) <= STATE_TTL \
+                and _RANK[st] > _RANK.get(out.get(proj, ""), 0):
+            out[proj] = st
+    return out
+
+
 def death_reason(sess: str) -> str:
     """Why a just-launched RC session died, read from its dead pane."""
     out = subprocess.run([TMUX, "capture-pane", "-t", sess, "-p"],
@@ -133,8 +161,15 @@ def launch(proj: str) -> tuple[str, str | None]:
     # default) makes `claude` prompt for spawn mode on a project's first run,
     # which hangs forever in a headless tmux session.
     cmd = [CLAUDE, "remote-control", "--name", proj, "--spawn", SPAWN]
+    # Tag the session env so the state hook fires for remote (phone-driven)
+    # sessions only, not local desk ones. The sessions the RC server spawns
+    # inherit this env, so rc_status.py can tell when a remote turn is live on
+    # the shared working tree.
+    env_opts = ["-e", f"RC_REMOTE={sess}", "-e", f"RC_PROJECT={proj}"]
+    if os.environ.get("RC_STATE_DIR"):
+        env_opts += ["-e", f"RC_STATE_DIR={os.environ['RC_STATE_DIR']}"]
     subprocess.run(
-        [TMUX, "new-session", "-d", "-s", sess,
+        [TMUX, "new-session", "-d", "-s", sess, *env_opts,
          "-c", os.path.join(PARENT, proj), " ".join(cmd)],
         check=False,
     )
@@ -236,6 +271,10 @@ box-shadow:0 0 8px var(--accent)}
 .dot.spin{border-color:var(--blue);border-top-color:transparent;box-shadow:none;
 background:transparent;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+.dot.work{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 3px var(--accent)}50%{box-shadow:0 0 12px var(--accent)}}
+.dot.wait{background:#f59e0b;border-color:#f59e0b;box-shadow:0 0 8px #f59e0b}
+.tag.tagwait{color:#f59e0b}
 .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tag{color:var(--accent);font-size:11px}
 .x{appearance:none;border:none;background:transparent;color:var(--mut);
@@ -269,18 +308,19 @@ text-align:center}
 const TOKEN=__TOKEN__, PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__),
   STARTING=new Set(), T=encodeURIComponent(TOKEN);
 const NAME_RE=/^[A-Za-z0-9._-]+$/;
-let LOGIN=__LOGIN__;
+let LOGIN=__LOGIN__, STATES=__STATES__;
 const $=s=>document.querySelector(s), RK='rc_recent';
 const getRecent=()=>{try{return JSON.parse(localStorage.getItem(RK))||[]}catch(e){return[]}};
 const pushRecent=n=>{let r=getRecent().filter(x=>x!==n);r.unshift(n);
   localStorage.setItem(RK,JSON.stringify(r.slice(0,6)));};
 function row(n){
   const li=document.createElement('li');li.dataset.n=n;
-  const live=RUNNING.has(n), starting=STARTING.has(n);
+  const live=RUNNING.has(n), starting=STARTING.has(n), st=live?STATES[n]:'';
   if(starting)li.className='starting';
-  li.innerHTML='<span class="dot'+(starting?' spin':live?' on':'')+'"></span>'+
-    '<span class=nm>'+n+'</span><span class=tag>'+
-    (starting?'starting&hellip;':live?'live':'')+'</span>'+
+  const dot=starting?'spin':st==='working'?'on work':st==='waiting'?'wait':live?'on':'';
+  const tag=starting?'starting&hellip;':st==='working'?'working':st==='waiting'?'waiting':live?'live':'';
+  li.innerHTML='<span class="dot'+(dot?' '+dot:'')+'"></span>'+
+    '<span class=nm>'+n+'</span><span class="tag'+(st==='waiting'?' tagwait':'')+'">'+tag+'</span>'+
     (live&&!starting?'<button class=x title="close session" aria-label="close '+n+'">&#10005;</button>':'');
   li.onclick=()=>go(n);
   if(live&&!starting)li.querySelector('.x').onclick=e=>{e.stopPropagation();stopSess(n);};
@@ -359,6 +399,7 @@ async function poll(){
   try{
     const r=await fetch('/status?token='+T);const j=await r.json();
     RUNNING.clear();j.running.forEach(n=>RUNNING.add(n));
+    STATES=j.states||{};
     LOGIN=j.login;authBar();render();
   }catch(e){}
 }
@@ -385,6 +426,7 @@ def page() -> bytes:
             .replace("__TOKEN__", json.dumps(TOKEN))
             .replace("__PROJECTS__", json.dumps(projects()))
             .replace("__RUNNING__", json.dumps(sorted(running())))
+            .replace("__STATES__", json.dumps(session_states()))
             .replace("__LOGIN__", json.dumps(login_status()))
             .replace("__HOST__", html.escape(HOST))).encode()
 
@@ -409,7 +451,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/":
             return self._send(200, page())
         if u.path == "/status":
-            return self._json({"running": sorted(running()), "login": login_status()})
+            return self._json({"running": sorted(running()), "login": login_status(),
+                               "states": session_states()})
         if u.path == "/create":
             proj = q.get("proj", [""])[0]
             status, reason = create(proj)
