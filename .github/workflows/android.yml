@@ -1,0 +1,64 @@
+name: Android APK + tests
+
+# Builds the debug APK for the android/ WebView wrapper so you never need the
+# Android toolchain on the Mac. Runs on any push that touches the app, or on demand
+# from the Actions tab (Run workflow). Download the APK from the run's Artifacts.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'android/app/**'
+      - 'android/*.gradle.kts'
+      - 'android/gradle.properties'
+      - 'android/gradle/**'
+      - '.github/workflows/android.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Unit tests (upload resume logic)
+        working-directory: android
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build debug APK
+        working-directory: android
+        env:
+          RC_TOKEN: ${{ secrets.RC_TOKEN }}
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/rc.keystore"
+          export KEYSTORE_FILE="$RUNNER_TEMP/rc.keystore"
+          gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-control-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

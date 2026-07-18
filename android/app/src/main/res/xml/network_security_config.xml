@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher is plain HTTP on the LAN / tailnet by design (no HTTPS), and Android
+  blocks cleartext by default on API 28+. Permit it. The app only ever talks to the
+  Launcher URL you configure, which rides your private LAN or the Tailscale subnet
+  route, never the open internet.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

@@ -1,0 +1,14 @@
+# Minimal pyproject — not a packaged project (no [project] table). Carries the ruff lint
+# floor and the bandit config that CI enforces.
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["F", "E9"]  # real errors only (pyflakes + syntax) — the gate's floor, not style
+
+[tool.bandit]
+exclude_dirs = ["tests", "review"]
+# Two deliberate, documented choices; everything else Medium+ must stay clean:
+#   B104 — the launcher binds 0.0.0.0 on purpose (reached over the Tailscale subnet route / LAN)
+#   B310 — the only urlopen is the user-configured RC_NOTIFY_URL ntfy/webhook push
+skips = ["B104", "B310"]

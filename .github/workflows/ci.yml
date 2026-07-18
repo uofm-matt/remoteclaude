@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff tzdata coverage bandit
+      - name: Lint (real errors — F/E9 floor from pyproject)
+        run: ruff check .
+      - name: Security scan (Medium+; deliberate B104/B310 skipped in pyproject)
+        run: bandit -c pyproject.toml -q -r . --severity-level medium
+      - name: Tests + coverage floor (aggregate and per-file)
+        run: |
+          coverage run --source=rc_launcher,rc_state,rc_status,rc_state_hook,rc_healthcheck -m unittest discover -s tests -t .
+          coverage report --fail-under=90
+          coverage json -q -o coverage.json
+          python review/coverage_floor.py 90
