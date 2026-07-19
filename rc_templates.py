@@ -267,6 +267,13 @@ font-weight:600;text-transform:uppercase}
 border:1px solid var(--bd);border-radius:8px;padding:6px 12px;cursor:pointer;
 -webkit-tap-highlight-color:transparent}
 .up:active{background:var(--row2)}
+.sortbar{display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.sortlbl{color:var(--mut);font-size:11px;letter-spacing:.3px;text-transform:uppercase}
+.sortbtn{border:1px solid var(--bd);border-radius:8px;padding:5px 11px;font:inherit;
+font-size:12px;color:var(--mut);background:var(--row);cursor:pointer;
+-webkit-tap-highlight-color:transparent}
+.sortbtn:active{background:var(--row2)}
+.sortbtn.on{color:var(--fg);border-color:var(--blue)}
 ul{list-style:none;margin:0;padding:6px 10px 48px}
 li{border-radius:11px;background:var(--row);margin:6px 0}
 li a{display:flex;align-items:center;gap:12px;padding:14px;color:var(--fg);
@@ -282,6 +289,7 @@ li.empty{background:none;color:var(--mut);text-align:center;padding:30px}
 <h1>rc-share &middot; __HOST__</h1>
 <div class=crumb>__CRUMB__</div>
 <label class=up id=up>+ upload<input id=f type=file multiple hidden></label>
+<div class=sortbar><span class=sortlbl>sort</span><button class=sortbtn data-k=n>name</button><button class=sortbtn data-k=s>size</button><button class=sortbtn data-k=t>date</button></div>
 </header>
 <ul>__ROWS__</ul>
 <script>
@@ -323,6 +331,23 @@ a.addEventListener('click',function(e){if(lp){e.preventDefault();lp=false;}});})
 async function del(a){
 if(!confirm('Delete '+a.querySelector('.nm').textContent+'?'))return;
 try{await fetch(a.getAttribute('href'),{method:'DELETE'});location.reload();}catch(e){}}
+var UL=document.querySelector('ul');
+function getSort(){try{return JSON.parse(localStorage.getItem('rc_sort'))||{k:'t',d:-1}}catch(e){return{k:'t',d:-1}}}
+function applySort(){
+var s=getSort(),lis=[].slice.call(UL.querySelectorAll('li[data-n]'));
+lis.sort(function(a,b){
+var dd=(+b.dataset.d)-(+a.dataset.d);if(dd)return dd;  // directories always on top
+var c=s.k==='n'?a.dataset.n.localeCompare(b.dataset.n):(+a.dataset[s.k])-(+b.dataset[s.k]);
+if(!c&&s.k!=='n')c=a.dataset.n.localeCompare(b.dataset.n);  // tie-break by name
+return c*s.d;});
+lis.forEach(function(li){UL.appendChild(li);});
+document.querySelectorAll('.sortbtn').forEach(function(b){var on=b.dataset.k===s.k;
+b.classList.toggle('on',on);b.textContent=b.dataset.lbl+(on?(s.d>0?' \\u2191':' \\u2193'):'');});}
+document.querySelectorAll('.sortbtn').forEach(function(b){b.dataset.lbl=b.textContent;
+b.addEventListener('click',function(){var s=getSort();
+if(s.k===b.dataset.k)s.d=-s.d;else{s.k=b.dataset.k;s.d=b.dataset.k==='n'?1:-1;}
+localStorage.setItem('rc_sort',JSON.stringify(s));applySort();});});
+applySort();
 __PTR__
 </script>
 </body></html>"""

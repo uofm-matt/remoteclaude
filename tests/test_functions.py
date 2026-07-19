@@ -155,6 +155,20 @@ class FunctionTest(unittest.TestCase):
         self.assertIn('href="/files/sub">sub</a>', html)
         self.assertIn('href="/files/sub/deep">deep</a>', html)
 
+    def test_rows_html_carries_sort_keys_dirs_first(self):
+        share = os.path.realpath(os.path.join(self.tmp, "share"))
+        os.makedirs(os.path.join(share, "sub"))          # a directory
+        Path(share, "a.txt").write_text("xxxxx")          # a 5-byte file
+        Path(share, "b.log").write_text("")               # a 0-byte file
+        rc_launcher.SHARE = share
+        rows = rc_launcher.rows_html(share, "")
+        self.assertIn('data-d="1"', rows)                 # the dir carries is-dir=1
+        self.assertIn('data-d="0"', rows)                 # a file carries is-dir=0
+        self.assertIn('data-n="a.txt"', rows)             # lowercased name key
+        self.assertIn('data-s="5"', rows)                 # size in bytes for the client sort
+        self.assertRegex(rows, r'data-t="\d+"')           # mtime key
+        self.assertLess(rows.index("sub/"), rows.index("a.txt"))  # dirs precede files (no-JS default)
+
     # --- ensure_trusted() ---
 
     def test_ensure_trusted_sets_flag_idempotently(self):

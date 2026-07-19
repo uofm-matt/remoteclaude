@@ -453,8 +453,10 @@ def crumb_html(rel: str) -> str:
 
 
 def rows_html(target: str, rel: str) -> str:
-    """One <li> per child, dirs first. Symlinks whose real target escapes SHARE
-    are never listed or linked — the same confinement share_target() enforces."""
+    """One <li> per child, dirs first. Each row carries data-d/n/s/t (is-dir, lowercased
+    name, size bytes, mtime) so the page can re-sort client-side without a round trip; the
+    server default (name, dirs first) is the no-JS fallback. Symlinks whose real target
+    escapes SHARE are never listed or linked — the same confinement share_target() enforces."""
     try:
         names = sorted(os.listdir(target))
     except OSError:
@@ -473,12 +475,15 @@ def rows_html(target: str, rel: str) -> str:
         except OSError:
             continue
         href = f"/files{base}/{quote(name)}"
-        if os.path.isdir(full):
-            dirs.append(f'<li class=dir><a href="{href}">'
+        is_dir = os.path.isdir(full)
+        data = (f'data-d="{int(is_dir)}" data-n="{html.escape(name.lower(), quote=True)}" '
+                f'data-s="{st.st_size}" data-t="{int(st.st_mtime)}"')
+        if is_dir:
+            dirs.append(f'<li class=dir {data}><a href="{href}">'
                         f'<span class=nm>{html.escape(name)}/</span></a></li>')
         else:
             when = f"{datetime.fromtimestamp(st.st_mtime, MT):%m/%d %H:%M}"
-            files.append(f'<li><a href="{href}"><span class=nm>{html.escape(name)}'
+            files.append(f'<li {data}><a href="{href}"><span class=nm>{html.escape(name)}'
                          f'</span><span class=meta>{human_size(st.st_size)} &middot; '
                          f'{when}</span></a></li>')
     rows = dirs + files
