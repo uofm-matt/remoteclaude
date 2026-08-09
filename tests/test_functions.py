@@ -107,6 +107,17 @@ class FunctionTest(unittest.TestCase):
         rc_launcher.GIT = "/nonexistent/git"  # simulate the missing binary under launchd PATH
         self.assertIsNone(rc_launcher._git_state("repo"))  # OSError swallowed -> None, page() won't 500
 
+    def test_git_state_timeout_is_none_not_crash(self):
+        self._git_repo("repo")
+
+        def boom(*a, **k):  # a hung `git status` hitting the timeout
+            raise subprocess.TimeoutExpired("git", rc_launcher.GIT_STATUS_TIMEOUT)
+
+        rc_launcher.subprocess.run = boom  # restored by restore_globals()
+        # TimeoutExpired is NOT an OSError; if the guard is narrowed to `except OSError:` this
+        # raises through git_states() -> page() and 500s the launcher. It must return None.
+        self.assertIsNone(rc_launcher._git_state("repo"))
+
     def test_git_states_maps_only_repos(self):
         self._git_repo("repo")
         self._proj("plain")

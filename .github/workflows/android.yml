@@ -1,12 +1,21 @@
 name: Android APK + tests
 
 # Builds the debug APK for the android/ WebView wrapper so you never need the
-# Android toolchain on the Mac. Runs on any push that touches the app, or on demand
-# from the Actions tab (Run workflow). Download the APK from the run's Artifacts.
+# Android toolchain on the Mac. Runs on a pull request or push that touches the app,
+# or on demand from the Actions tab (Run workflow). Download the APK from the run's
+# Artifacts. The pull_request trigger gates the Kotlin tests + build before merge, not
+# just after it on push to main.
 
 on:
   workflow_dispatch:
   push:
+    paths:
+      - 'android/app/**'
+      - 'android/*.gradle.kts'
+      - 'android/gradle.properties'
+      - 'android/gradle/**'
+      - '.github/workflows/android.yml'
+  pull_request:
     paths:
       - 'android/app/**'
       - 'android/*.gradle.kts'

@@ -8,11 +8,19 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Now — small, high value (target 2026-08-08)
 
+> **DONE 2026-08-08** — `test_git_state_timeout_is_none_not_crash` (tests/test_functions.py):
+> a `TimeoutExpired` from `subprocess.run` now asserts `_git_state` returns `None`, so narrowing
+> the guard to `except OSError:` fails the suite instead of shipping a page-load 500.
+
 - [ ] **Test the `git status` timeout guard.** `_git_state` (rc_launcher.py:136) catches
   `subprocess.TimeoutExpired`, but nothing exercises it — collapsing the `except` to `OSError`
   alone keeps every test green and lets a hung `git status` (index.lock / slow disk) 500 the
   launcher page. Add a test that monkeypatches `subprocess.run` to raise `TimeoutExpired` and
   asserts `_git_state` returns `None`. (~4 lines.)
+
+> **DONE 2026-08-08** — `android.yml` now has a `pull_request:` trigger mirroring the push
+> path filter, so the Kotlin tests + APK build gate PRs, not just post-merge pushes to main.
+
 - [ ] **Gate Android on pull requests.** `.github/workflows/android.yml` triggers only on
   `push` + `workflow_dispatch`, so `testDebugUnitTest` / `assembleDebug` run post-merge, not on
   the PR. Add a `pull_request:` trigger mirroring `ci.yml`. (One line.)
