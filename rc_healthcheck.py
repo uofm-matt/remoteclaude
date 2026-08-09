@@ -13,28 +13,16 @@ unset, it falls back to a local desktop notification (macOS or Linux) only.
 """
 
 import contextlib
-import json
 import os
 import platform
 import shutil
 import subprocess
 import urllib.request
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
-CLAUDE = os.path.expanduser(os.environ.get("RC_CLAUDE_BIN", "~/.local/bin/claude"))
+from rc_claude import MT, auth_status
+
 NOTIFY_URL = os.environ.get("RC_NOTIFY_URL", "")
-MT = ZoneInfo("America/Denver")
-
-
-def auth_state() -> tuple[str, str]:
-    try:
-        out = subprocess.run([CLAUDE, "auth", "status"],
-                             capture_output=True, text=True, timeout=20).stdout
-        d = json.loads(out)
-        return ("ok", d.get("email", "")) if d.get("loggedIn") else ("loggedout", "")
-    except (json.JSONDecodeError, subprocess.SubprocessError, OSError) as err:
-        return "unknown", str(err)
 
 
 def notify(title: str, msg: str) -> None:
@@ -52,7 +40,7 @@ def notify(title: str, msg: str) -> None:
 
 
 def main() -> None:
-    state, detail = auth_state()
+    state, detail = auth_status(timeout=20)  # the watchdog can afford a longer probe than the badge
     print(f"{datetime.now(MT):%Y-%m-%d %H:%M:%S} MT  login={state} {detail}".rstrip(),
           flush=True)
     if state != "ok":

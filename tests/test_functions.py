@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shutil
+import socketserver
 import subprocess
 import tempfile
 import time
@@ -209,6 +210,39 @@ class FunctionTest(unittest.TestCase):
         self._proj("proj")
         rc_launcher.ensure_trusted("proj")  # JSONDecodeError (a ValueError, not OSError) -> no raise
         self.assertTrue(any(e[0] == "trust" for e in events))
+
+    # --- page() templating / Server.handle_error ---
+
+    def test_page_placeholder_named_project_not_reinterpreted(self):
+        self._proj("__LOGIN__")  # a project dir named like a placeholder — NAME_RE permits it
+        for fn in ("login_status", "running", "session_states", "git_states"):
+            self.addCleanup(setattr, rc_launcher, fn, getattr(rc_launcher, fn))
+        rc_launcher.login_status = lambda: "ok"
+        rc_launcher.running = lambda: set()
+        rc_launcher.session_states = lambda: {}
+        rc_launcher.git_states = lambda projs=None: {}
+        out = rc_launcher.page().decode()
+        self.assertIn('["__LOGIN__"]', out)  # the name survives as data in PROJECTS...
+        self.assertIn('LOGIN="ok"', out)     # ...and the real __LOGIN__ slot filled, not clobbered
+        # (the old chained-replace produced [""ok""] here — a broken script)
+
+    def test_server_handle_error_swallows_conn_noise_reraises_real(self):
+        self.addCleanup(setattr, socketserver.BaseServer, "handle_error",
+                        socketserver.BaseServer.handle_error)
+        reached = []
+        socketserver.BaseServer.handle_error = lambda self, req, addr: reached.append(True)
+        srv = rc_launcher.Server(("127.0.0.1", 0), rc_launcher.Handler)
+        self.addCleanup(srv.server_close)
+        try:
+            raise ConnectionResetError("client RST")
+        except ConnectionResetError:
+            srv.handle_error(None, ("127.0.0.1", 0))
+        self.assertEqual(reached, [])       # a dropped connection is swallowed, no traceback
+        try:
+            raise ValueError("a real bug")
+        except ValueError:
+            srv.handle_error(None, ("127.0.0.1", 0))
+        self.assertEqual(reached, [True])   # a real error still reaches the traceback path
 
     # --- log_event / projects edge / session_states skips ---
 

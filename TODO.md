@@ -27,14 +27,27 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Next — medium (target 2026-08-15)
 
+> **DONE 2026-08-09** — extracted `rc_claude.py` (CLAUDE + `auth_status()` + MT), imported by
+> both the launcher and the watchdog; the `claude auth status` contract now has one definition.
+> rc_claude depends on neither module, so the watchdog stays independent of the launcher.
+
 - [ ] **Share the `claude auth status` probe.** `_login_status` (rc_launcher.py:68) and
   `rc_healthcheck.auth_state` (rc_healthcheck.py:30) parse the same JSON independently, and the
   `CLAUDE` path and `MT` tz are duplicated in both. A contract or default-path change silently
   desyncs the launcher badge from the watchdog. Extract a small `rc_claude.py` both import —
   keep it separate from `rc_launcher` so the watchdog stays independent of the launcher.
+
+> **DONE 2026-08-09** — `test_server_handle_error_swallows_conn_noise_reraises_real` asserts a
+> `ConnectionResetError` is swallowed and a `ValueError` reaches the traceback path.
+
 - [ ] **Test `Server.handle_error`.** rc_launcher.py:796 — assert a `ConnectionError`/
   `BrokenPipeError` is swallowed and a generic exception still reaches the traceback path, so a
   future broadening of that filter can't silently flood or silence the error log.
+
+> **DONE 2026-08-09** — `page()`/`share_page()` now fill via a single-pass `_fill()` (one regex
+> over the known keys), so a project named `__LOGIN__` survives as data instead of being
+> rewritten into broken JS. Guarded by `test_page_placeholder_named_project_not_reinterpreted`.
+
 - [ ] **Single-pass templating.** `page()` / `share_page()` fill placeholders with ordered
   `str.replace`, so a project directory named `__LOGIN__` or `__HOST__` gets rewritten by a
   later pass and breaks the page. Replace with one mapping pass (or non-data sentinels).

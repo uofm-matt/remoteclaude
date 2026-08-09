@@ -20,7 +20,7 @@ jobs:
         run: bandit -c pyproject.toml -q -r . --severity-level medium
       - name: Tests + coverage floor (aggregate and per-file)
         run: |
-          coverage run --source=rc_launcher,rc_state,rc_status,rc_state_hook,rc_healthcheck -m unittest discover -s tests -t .
+          coverage run --source=rc_launcher,rc_claude,rc_state,rc_status,rc_state_hook,rc_healthcheck -m unittest discover -s tests -t .
           coverage report --fail-under=90
           coverage json -q -o coverage.json
           python review/coverage_floor.py 90

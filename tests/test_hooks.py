@@ -12,6 +12,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
+import rc_claude
 import rc_healthcheck
 import rc_state
 import rc_state_hook
@@ -99,13 +100,14 @@ class HealthcheckTest(unittest.TestCase):
     def _claude(self, stdout):
         rc_healthcheck.subprocess.run = lambda *a, **k: proc(stdout=stdout)
 
-    def test_auth_state_maps_claude_status(self):
+    def test_auth_status_maps_claude_status(self):
+        # the shared probe both the launcher badge and the watchdog now use
         self._claude('{"loggedIn": true, "email": "me@x"}')
-        self.assertEqual(rc_healthcheck.auth_state(), ("ok", "me@x"))
+        self.assertEqual(rc_claude.auth_status(), ("ok", "me@x"))
         self._claude('{"loggedIn": false}')
-        self.assertEqual(rc_healthcheck.auth_state(), ("loggedout", ""))
+        self.assertEqual(rc_claude.auth_status(), ("loggedout", ""))
         self._claude("not json")
-        self.assertEqual(rc_healthcheck.auth_state()[0], "unknown")  # JSONDecodeError -> unknown
+        self.assertEqual(rc_claude.auth_status()[0], "unknown")  # JSONDecodeError -> unknown
 
     def test_notify_uses_desktop_path(self):
         self.addCleanup(setattr, rc_healthcheck.platform, "system", rc_healthcheck.platform.system)

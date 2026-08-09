@@ -33,13 +33,12 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
-from zoneinfo import ZoneInfo
 
+from rc_claude import CLAUDE, MT, auth_status
 from rc_state import RANK as _RANK, STATE_DIR, valid_states
 from rc_templates import FILES_PAGE, PAGE
 
 PARENT = os.path.expanduser(os.environ.get("RC_PROJECTS_PARENT", "~/projects"))
-CLAUDE = os.path.expanduser(os.environ.get("RC_CLAUDE_BIN", "~/.local/bin/claude"))
 TMUX = os.environ.get("RC_TMUX_BIN", "/opt/homebrew/bin/tmux")
 GIT = os.environ.get("RC_GIT_BIN", "git")
 TOKEN = os.environ.get("RC_LAUNCHER_TOKEN", "")
@@ -54,7 +53,6 @@ SHARE = os.path.realpath(os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc
 RCPART_TTL = 6 * 3600  # abandoned .rcpart uploads (no writes in this long) get swept
 GIT_TTL = float(os.environ.get("RC_GIT_TTL", "15"))  # per-project git state is cached this long
 GIT_STATUS_TIMEOUT = float(os.environ.get("RC_GIT_STATUS_TIMEOUT", "3"))  # cap a hung `git status`
-MT = ZoneInfo("America/Denver")
 
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -67,12 +65,7 @@ def log_event(action: str, proj: str, result: str) -> None:
 
 @functools.lru_cache(maxsize=1)
 def _login_status(_bucket: int) -> str:
-    try:
-        out = subprocess.run([CLAUDE, "auth", "status"],
-                             capture_output=True, text=True, timeout=15).stdout
-        return "ok" if json.loads(out).get("loggedIn") else "loggedout"
-    except (json.JSONDecodeError, subprocess.SubprocessError, OSError):
-        return "unknown"
+    return auth_status()[0]  # shared probe; the badge needs only the state
 
 
 def login_status() -> str:
@@ -424,15 +417,23 @@ def js(x: object) -> str:
     return json.dumps(x).replace("<", "\\u003c")
 
 
+def _fill(template: str, values: dict[str, str]) -> bytes:
+    """Fill __PLACEHOLDER__s in one pass, so injected data (a project dir named __LOGIN__,
+    which NAME_RE permits) can't be re-scanned and rewritten by a later replacement."""
+    pat = re.compile("|".join(map(re.escape, values)))
+    return pat.sub(lambda m: values[m.group()], template).encode()
+
+
 def page() -> bytes:
     projs = projects()  # computed once and shared with git_states so PARENT is scanned once
-    return (PAGE
-            .replace("__PROJECTS__", js(projs))
-            .replace("__RUNNING__", js(sorted(running())))
-            .replace("__STATES__", js(session_states()))
-            .replace("__GITSTATES__", js(git_states(projs)))
-            .replace("__LOGIN__", js(login_status()))
-            .replace("__HOST__", html.escape(HOST))).encode()
+    return _fill(PAGE, {
+        "__PROJECTS__": js(projs),
+        "__RUNNING__": js(sorted(running())),
+        "__STATES__": js(session_states()),
+        "__GITSTATES__": js(git_states(projs)),
+        "__LOGIN__": js(login_status()),
+        "__HOST__": html.escape(HOST),
+    })
 
 
 def human_size(n: float) -> str:
@@ -491,11 +492,12 @@ def rows_html(target: str, rel: str) -> str:
 
 
 def share_page(target: str, rel: str) -> bytes:
-    return (FILES_PAGE
-            .replace("__REL__", js(rel.rstrip("/")))
-            .replace("__HOST__", html.escape(HOST))
-            .replace("__CRUMB__", crumb_html(rel))
-            .replace("__ROWS__", rows_html(target, rel))).encode()
+    return _fill(FILES_PAGE, {
+        "__REL__": js(rel.rstrip("/")),
+        "__HOST__": html.escape(HOST),
+        "__CRUMB__": crumb_html(rel),
+        "__ROWS__": rows_html(target, rel),
+    })
 
 
 def within_share(p: str) -> bool:
