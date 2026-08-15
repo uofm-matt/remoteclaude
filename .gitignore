@@ -3,3 +3,6 @@ __pycache__/
 .coverage
 .ruff_cache/
 .claude/
+
+# local planning doc — carries private lab topology, never commit to the public repo
+MIGRATION-to-devbox.md
