@@ -103,7 +103,7 @@ class MainActivity : Activity() {
         }
         setContentView(web)
 
-        val url = prefs.getString("url", null) ?: bakedUrl()
+        val url = prefs.getString("url", null)
         if (url.isNullOrBlank()) promptForToken() else web.loadUrl(url)
     }
 
@@ -138,11 +138,6 @@ class MainActivity : Activity() {
         }
     }
 
-    // URL built from the token baked in at CI build time (RC_TOKEN secret), or null
-    // for a local build with no token — then we fall back to asking.
-    private fun bakedUrl(): String? =
-        BuildConfig.RC_TOKEN.takeIf { it.isNotEmpty() }?.let { "$host/?token=$it" }
-
     // Offer to place the app on the home screen once (the launcher shows a confirm).
     // Gated by a pref so it asks a single time; stable signing then keeps the icon
     // across in-place updates, so it never needs re-adding.
@@ -166,12 +161,14 @@ class MainActivity : Activity() {
         }
         AlertDialog.Builder(this)
             .setTitle("Launcher token")
-            .setMessage("Paste the token from install.sh (~/.config/rc-launcher/token). Host is $host — long-press anywhere to re-enter it later.")
+            .setMessage("Paste the token (cat ~/.config/rc-launcher/token on the Mac), or the full launcher URL if the host isn't $host. Long-press anywhere to re-enter it later.")
             .setView(field)
             .setPositiveButton("Connect") { _, _ ->
                 val t = field.text.toString().trim()
                 if (t.isNotEmpty()) {
-                    val u = "$host/?token=$t"
+                    // a full URL wins (covers a host different from the baked default);
+                    // a bare token pairs with the baked RC_HOST
+                    val u = if (t.startsWith("http")) t else "$host/?token=$t"
                     prefs.edit().putString("url", u).apply()
                     web.loadUrl(u)
                 }
@@ -198,7 +195,7 @@ class MainActivity : Activity() {
     // The Retry link just navigates back to the launcher URL; if it fails again the same page
     // reappears. Long-press still re-opens the token dialog (see the hint).
     private fun showConnError(v: WebView) {
-        val retry = prefs.getString("url", null) ?: bakedUrl()
+        val retry = prefs.getString("url", null)
         v.loadDataWithBaseURL(null, errorHtml(retry), "text/html", "UTF-8", null)
     }
 

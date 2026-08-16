@@ -20,15 +20,27 @@ import kotlin.concurrent.thread
 
 /**
  * Share target with a progress dialog. Send file(s) to "Remote Control" from any app and
- * they upload to ~/rc-share via the launcher PUT endpoint (baked-in token), no web view.
- * Shows a per-file progress bar + byte count, then finishes. Streams straight from the
- * content URI so a large video never buffers into memory.
+ * they upload to ~/rc-share via the launcher PUT endpoint, no web view. Shows a per-file
+ * progress bar + byte count, then finishes. Streams straight from the content URI so a
+ * large video never buffers into memory.
  */
 class UploadActivity : Activity() {
 
     private lateinit var title: TextView
     private lateinit var bar: ProgressBar
     private lateinit var status: TextView
+
+    // (base, token) parsed from the URL MainActivity persisted on paste. No token is baked
+    // into CI APKs (public repo, world-downloadable artifacts), so the pasted credential is
+    // the only source — and it also carries the right host if it differs from RC_HOST.
+    private val creds: Pair<String, String>? by lazy {
+        getSharedPreferences("rc", MODE_PRIVATE).getString("url", null)?.let {
+            val u = Uri.parse(it)
+            val t = u.getQueryParameter("token")
+            if (t.isNullOrEmpty() || u.scheme == null) null
+            else "${u.scheme}://${u.authority}" to t
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,7 +62,7 @@ class UploadActivity : Activity() {
         if (uris.isEmpty()) {
             Toast.makeText(this, "no file found in the share", Toast.LENGTH_LONG).show(); finish(); return
         }
-        if (BuildConfig.RC_TOKEN.isEmpty()) { toast("no token — open the app once"); finish(); return }
+        if (creds == null) { toast("no token — open Remote Control once and paste it"); finish(); return }
         thread {
             var ok = 0
             uris.forEachIndexed { i, uri ->
@@ -140,7 +152,10 @@ class UploadActivity : Activity() {
         conn.responseCode == 200
     } catch (e: Exception) { Log.w(TAG, "PUT(whole) failed", e); false }
 
-    private fun url(name: String) = URL("${BuildConfig.RC_HOST}/files/${Uri.encode(name)}?token=${BuildConfig.RC_TOKEN}")
+    private fun url(name: String): URL {
+        val (base, token) = creds!!  // onCreate bailed if null
+        return URL("$base/files/${Uri.encode(name)}?token=$token")
+    }
 
     private fun gap(top: Float = 0f, bottom: Float = 0f) =
         LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { setMargins(0, top.toInt(), 0, bottom.toInt()) }

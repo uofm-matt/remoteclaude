@@ -56,7 +56,11 @@ jobs:
       - name: Build debug APK
         working-directory: android
         env:
-          RC_TOKEN: ${{ secrets.RC_TOKEN }}
+          # No auth token: the repo is public and artifacts are world-downloadable, so CI
+          # builds are untokened by design — the app asks once and keeps it in prefs.
+          # RC_HOST comes from a repo *variable* (not tracked) so the source keeps a
+          # generic default while your builds bake the real host.
+          RC_HOST: ${{ vars.RC_HOST }}
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -65,9 +69,23 @@ jobs:
           export KEYSTORE_FILE="$RUNNER_TEMP/rc.keystore"
           gradle assembleDebug --no-daemon --stacktrace
 
+      - name: Guard — no auth token can reach the APK
+        working-directory: android
+        run: |
+          # Value-independent: fails on the mechanism (a token field or secret wiring
+          # reappearing), so it keeps working after any rotation.
+          if grep -n 'RC_TOKEN' app/build.gradle.kts; then
+            echo '::error::RC_TOKEN buildConfigField is back in build.gradle.kts'; exit 1; fi
+          if grep -rn 'secrets[.]RC_TOKEN' ../.github/workflows/; then
+            echo '::error::a workflow references an RC_TOKEN secret again'; exit 1; fi
+          if unzip -p app/build/outputs/apk/debug/app-debug.apk 'classes*.dex' | strings | grep -qx 'RC_TOKEN'; then
+            echo '::error::RC_TOKEN symbol present in the shipped dex'; exit 1; fi
+          echo "guard OK: no token field, no secret wiring, dex clean"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: remote-control-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7

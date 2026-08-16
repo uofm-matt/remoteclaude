@@ -36,13 +36,14 @@ fi
 # 2. claude binary present
 [ -x "$CLAUDE_BIN" ] || { echo "!! claude not found at $CLAUDE_BIN (set RC_CLAUDE_BIN)"; exit 1; }
 
-# 3. token (generate once, reuse thereafter; never in the repo)
+# 3. token (generate once, reuse thereafter; never in the repo). Only the 0600 file
+#    holds it — the launcher reads it directly, so the service files below stay
+#    secret-free and rotation is delete-file + re-run (or write-file + kickstart).
 mkdir -p "$(dirname "$TOKEN_FILE")"
 if [ ! -s "$TOKEN_FILE" ]; then
   "$PY" -c "import secrets;print(secrets.token_urlsafe(24))" > "$TOKEN_FILE"
   chmod 600 "$TOKEN_FILE"
 fi
-TOKEN="$(cat "$TOKEN_FILE")"
 
 # 3b. dedicated file-share drop dir — served read-only at /files and, if you enable
 #     SMB by hand, mountable as a Windows drive. A dir of its own, never ~/projects.
@@ -89,7 +90,6 @@ install_launchd() {
   <key>EnvironmentVariables</key><dict>
     <key>HOME</key><string>${HOME}</string>
     <key>PATH</key><string>$(dirname "$PY"):$(dirname "$TMUX_BIN"):/usr/bin:/bin</string>
-    <key>RC_LAUNCHER_TOKEN</key><string>${TOKEN}</string>
     <key>RC_PROJECTS_PARENT</key><string>${PROJECTS_PARENT}</string>
     <key>RC_CLAUDE_BIN</key><string>${CLAUDE_BIN}</string>
     <key>RC_TMUX_BIN</key><string>${TMUX_BIN}</string>
@@ -138,7 +138,6 @@ Description=Remote Control launcher
 [Service]
 ExecStart=${PY} ${REPO}/rc_launcher.py
 WorkingDirectory=${REPO}
-Environment=RC_LAUNCHER_TOKEN=${TOKEN}
 Environment=RC_PROJECTS_PARENT=${PROJECTS_PARENT}
 Environment=RC_CLAUDE_BIN=${CLAUDE_BIN}
 Environment=RC_TMUX_BIN=${TMUX_BIN}
@@ -188,8 +187,9 @@ case "$OS" in
 esac
 echo
 echo "==> launcher loaded. Bookmark / Add-to-Home-Screen on your phone:"
-echo "    http://${IP}:${PORT}/?token=${TOKEN}"
-echo "    (the token is stored once as a cookie, then dropped from the URL)"
+echo "    http://${IP}:${PORT}/?token=<token>     (token: cat $TOKEN_FILE)"
+echo "    (never echoed here — a printed token lands in terminal scrollback/transcripts;"
+echo "     it's stored once as a cookie, then dropped from the URL)"
 echo
 echo "==> do these by hand (see RUNBOOK.md):"
 echo "    one-time:  $CLAUDE_BIN   then /login   (caches the OAuth token RC needs)"

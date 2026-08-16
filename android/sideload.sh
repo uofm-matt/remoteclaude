@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Pull the latest CI-built debug APK and (re)install it on the connected phone.
 #
-# Every CI build is signed with a throwaway debug key, so a new APK won't install
-# *over* the previous one — this script uninstalls first, which is the whole point.
+# CI builds are signed with the stable keystore (KEYSTORE_* secrets), so `adb install -r`
+# updates in place and app data (the pasted token, cookies, icon) survives; it only
+# falls back to uninstall+reinstall on a signature mismatch (e.g. a local unsigned build).
 #
 #   ./sideload.sh                 # install the newest build now (waits if it's still building)
 #   ./sideload.sh --build         # trigger a fresh build of the committed code first, then install

@@ -41,7 +41,18 @@ from rc_templates import FILES_PAGE, PAGE
 PARENT = os.path.expanduser(os.environ.get("RC_PROJECTS_PARENT", "~/projects"))
 TMUX = os.environ.get("RC_TMUX_BIN", "/opt/homebrew/bin/tmux")
 GIT = os.environ.get("RC_GIT_BIN", "git")
-TOKEN = os.environ.get("RC_LAUNCHER_TOKEN", "")
+def _read_token() -> str:
+    """Auth token, file-first (the 0600 file install.sh writes) with the env as fallback.
+    The service files stopped carrying the secret, so `launchctl print` / `systemctl show`
+    can't leak it and rotation is write-file + kickstart, no plist surgery."""
+    tf = Path(os.path.expanduser(
+        os.environ.get("RC_LAUNCHER_TOKEN_FILE", "~/.config/rc-launcher/token")))
+    with contextlib.suppress(OSError):
+        return tf.read_text().strip()
+    return os.environ.get("RC_LAUNCHER_TOKEN", "")
+
+
+TOKEN = _read_token()
 PORT = int(os.environ.get("RC_LAUNCHER_PORT", "8787"))
 BIND = os.environ.get("RC_LAUNCHER_BIND", "0.0.0.0")
 SPAWN = os.environ.get("RC_SPAWN", "same-dir")  # same-dir | worktree | session
@@ -555,8 +566,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, code: int, body: bytes, ctype: str = "text/html; charset=utf-8",
               set_cookie: bool = False, close: bool = False):
-        if code >= 400:  # non-2xx used to be invisible (log_message is silenced) — trace it
-            log_event("http", f"{self.command} {self.path}", str(code))
+        if code >= 400:  # non-2xx used to be invisible (log_message is silenced) — trace it.
+            # Path only, never the query: the app's uploads carry ?token=, and a failed
+            # request would otherwise write the live token into the world-readable log.
+            log_event("http", f"{self.command} {urlparse(self.path).path}", str(code))
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Cache-Control", "no-store")
@@ -801,7 +814,7 @@ class Server(ThreadingHTTPServer):
 
 if __name__ == "__main__":
     if not TOKEN:
-        raise SystemExit("RC_LAUNCHER_TOKEN not set (the LaunchAgent supplies it)")
+        raise SystemExit("no launcher token: run install.sh (writes ~/.config/rc-launcher/token)")
     print(f"rc-launcher on {BIND}:{PORT} parent={PARENT} spawn={SPAWN}")
     threading.Thread(target=sweep_loop, daemon=True).start()
     Server((BIND, PORT), Handler).serve_forever()

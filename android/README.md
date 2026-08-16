@@ -87,22 +87,24 @@ No Play Store. Sideload the APK:
 - transfer the APK to the phone and tap it (enable "install unknown apps" for your
   file manager when prompted).
 
-The debug APK is signed with Android Studio's debug keystore. To update in place you
-must keep signing with the **same** keystore — a differently-signed APK won't install
-over the old one (uninstall first, which loses the saved URL/cookie).
+CI APKs are signed with the stable keystore (the `KEYSTORE_*` Actions secrets). To update
+in place you must keep signing with the **same** keystore — a differently-signed APK won't
+install over the old one (uninstall first, which loses the saved URL/cookie).
 
 ## First run
 
-CI-built APKs carry both the launcher host (e.g. `192.168.1.100:8787`, set via `RC_HOST`) and the token, so a
-sideloaded build opens straight to the launcher — no entry needed. The token is injected
-from the `RC_TOKEN` GitHub Actions secret at build time, so it ends up in the APK on your
-phone but never in this **public** repo. Set the secret once:
+CI APKs are **untokened by design**: this repo is public and workflow artifacts are
+downloadable by any logged-in GitHub user, so no secret is ever baked in — a CI guard
+step fails the build if a token field or secret wiring ever reappears. On first launch
+the app asks once: paste the token (`cat ~/.config/rc-launcher/token` on the Mac), or the
+full launcher URL if your host differs from the baked `RC_HOST` default (set the
+`RC_HOST` repo *variable* to bake yours: `gh variable set RC_HOST --body "http://<mac-lan-ip>:8787"`).
+Stable signing means updates install in place and the pasted token survives — it really
+is once per device.
 
-    gh secret set RC_TOKEN -R <you>/remoteclaude --body "$(cat ~/.config/rc-launcher/token)"
-
-**Long-press** anywhere to override the token (e.g. after rotating it). A *local* build
-with no secret has an empty token and falls back to asking for it. To point at a
-different host, change `host` in `MainActivity.kt`.
+**Long-press** anywhere to re-enter it (e.g. after rotating the token; the "Can't reach
+Remote Control" screen you'll see right after a rotation is expected — its third bullet
+points at exactly this).
 
 Reach it the same way the web page does: same LAN, or a Tailscale subnet route to the
 Mac's LAN IP. The Mac still runs no Tailscale.

@@ -13,9 +13,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-        // Token injected from the RC_TOKEN Actions secret at build time; empty for
-        // local builds (the app then asks for it). Never committed — repo is public.
-        buildConfigField("String", "RC_TOKEN", "\"${System.getenv("RC_TOKEN") ?: ""}\"")
+        // No token is ever baked into the APK: the repo is public and CI artifacts are
+        // world-downloadable, so the app asks once and keeps it in prefs (stable signing
+        // preserves that across updates). CI guards that no token can sneak back in.
         // Mac host:port — one source of truth for both activities. Override with RC_HOST;
         // include the scheme (e.g. http://host:8787) — it's used as a URL base verbatim.
         buildConfigField("String", "RC_HOST", "\"${System.getenv("RC_HOST") ?: "http://192.168.1.100:8787"}\"")
