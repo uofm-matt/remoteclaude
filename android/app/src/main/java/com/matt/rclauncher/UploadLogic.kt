@@ -22,6 +22,9 @@ internal fun resumeUpload(
     send: (Long) -> Boolean,
     onRetry: () -> Unit = {},
 ): Boolean {
+    // The server rejects total <= 0 with 400, and have(0) >= total(0) would otherwise report
+    // success without a single byte sent — an empty file must fail here, not fake an upload.
+    if (total <= 0) return false
     val maxStalls = 6
     var stalls = 0
     var lastHave = -1L

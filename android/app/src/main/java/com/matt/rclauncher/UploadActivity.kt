@@ -88,6 +88,11 @@ class UploadActivity : Activity() {
             }
             return false
         }
+        if (total == 0L) {  // server 400s zero-byte PUTs; don't let the resume path fake success
+            ui { status.text = "empty file — skipped" }
+            Thread.sleep(800)
+            return false
+        }
         // Resume via the pure policy in UploadLogic.kt: probe what the server holds (HEAD), PUT
         // the rest from there; a dropped link keeps the partial so the next attempt picks up.
         val rid = "$total-${lastModified(uri)}"  // key the resume so a stale same-name partial isn't merged onto

@@ -59,6 +59,15 @@ class UploadLogicTest {
     }
 
     @Test
+    fun zeroTotalFailsWithoutSending() {
+        // total==0 must not sail through as have(0) >= total(0): the server 400s empty PUTs,
+        // so "success" here would be a fake — nothing ever landed
+        val sent = mutableListOf<Long>()
+        assertFalse(resumeUpload(0L, probe = { 0L }, send = { sent.add(it); true }))
+        assertTrue(sent.isEmpty())
+    }
+
+    @Test
     fun alreadyCompleteNeedsNoSend() {
         val sent = mutableListOf<Long>()
         assertTrue(resumeUpload(500L, probe = { 500L }, send = { sent.add(it); true }))
