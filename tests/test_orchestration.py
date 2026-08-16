@@ -63,7 +63,11 @@ class OrchestrationTest(unittest.TestCase):
         rc_launcher.RESUME = "fork"
         self.assertEqual(rc_launcher.launch_cmd("proj")[0],
                          [c, "--continue", "--fork-session", "--remote-control", "proj"])
-        rc_launcher.SPAWN = "worktree"  # not same-dir -> always fresh, with the exact --spawn value
+        rc_launcher.RESUME, rc_launcher.SPAWN = "off", "same-dir"  # fresh same-dir -> FLAG form:
+        cmd, resuming = rc_launcher.launch_cmd("proj")             # local-first, desk-resumable
+        self.assertFalse(resuming)
+        self.assertEqual(cmd, [c, "--remote-control", "proj"])  # never the relay-only subcommand
+        rc_launcher.SPAWN = "worktree"  # not same-dir -> subcommand form, exact --spawn value
         cmd, resuming = rc_launcher.launch_cmd("proj")
         self.assertFalse(resuming)
         self.assertEqual(cmd, [c, "remote-control", "--name", "proj", "--spawn", "worktree"])
@@ -143,8 +147,8 @@ class OrchestrationTest(unittest.TestCase):
         self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
         self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
         newsession = next(c for c in self.calls if "new-session" in " ".join(map(str, c)))
-        self.assertEqual(newsession[-1],  # the exact claude command tmux is told to run
-                         f"{rc_launcher.CLAUDE} remote-control --name proj --spawn same-dir")
+        self.assertEqual(newsession[-1],  # the exact claude command tmux is told to run —
+                         f"{rc_launcher.CLAUDE} --remote-control proj")  # flag form: local-first
         # rooted in the project dir (same-dir is load-bearing) and tagged so the state hook fires
         self.assertEqual(newsession[newsession.index("-c") + 1],
                          os.path.join(rc_launcher.PARENT, "proj"))
@@ -183,7 +187,8 @@ class OrchestrationTest(unittest.TestCase):
         spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
         self.assertEqual(len(spawns), 2)
         self.assertIn("--continue", spawns[0])     # first attempt resumes
-        self.assertNotIn("--continue", spawns[1])  # the fallback is a FRESH launch, no --continue
+        self.assertEqual(spawns[1],                # the fallback is a FRESH flag-form launch
+                         f"{rc_launcher.CLAUDE} --remote-control proj")
 
     def test_stop_sigint_then_kill(self):
         self.assertEqual(rc_launcher.stop("proj"), ("stopped", None))

@@ -4,6 +4,15 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-16
 
+- Fresh same-dir launches use `claude --remote-control <name>` (the top-level flag) instead
+  of the `remote-control` subcommand — the subcommand births relay-only threads that neither
+  the desk nor the launcher's own resume can ever reopen, so every phone-created project
+  silently lost desk continuity (and re-forked a fresh thread on each tap). Proven by A/B:
+  sandbox (subcommand-born, 68/68 `sdk-cli` records, unresumable) vs a probe project
+  (flag-born, phone conversation recalled at the desk via `claude --continue`).
+  Affected projects self-heal on their next tap: the fallback now launches flag-form, so new
+  turns land in a desk-resumable transcript (old relay-only history stays app-only). The
+  resume fallback also logs the real death reason instead of a hardcoded "no history".
 - Remove the auth token from every public and shared channel — a review panel found the
   `RC_TOKEN` GitHub secret was baked into CI debug APKs uploaded as artifacts on this
   public repo (downloadable by any logged-in GitHub user; 23 unexpired copies deleted,

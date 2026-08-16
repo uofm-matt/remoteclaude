@@ -315,8 +315,16 @@ def takeover(proj: str) -> list[int]:
 
 
 def fresh_cmd(proj: str) -> list[str]:
-    # Subcommand form with an explicit --spawn: worktree/session are isolated by
-    # design, and omitting --spawn here prompts for a mode and hangs headless.
+    """Fresh-launch invocation. same-dir uses the top-level FLAG form: it starts a
+    local-first session whose phone-driven turns land in a normal desk-resumable
+    transcript. The `remote-control` subcommand/server form births relay-only threads
+    that neither the desk nor the launcher's own --continue can ever reopen (proven
+    2026-08-16: sandbox, subcommand-born, 68/68 sdk-cli records, resume always fell back;
+    rcprobe-flag, flag-born, `claude --continue` recalled the phone conversation).
+    worktree/session keep the subcommand form — the flag form takes no --spawn, and
+    those modes are isolated by design, so desk resumability isn't their point."""
+    if SPAWN == "same-dir":
+        return [CLAUDE, "--remote-control", proj]
     return [CLAUDE, "remote-control", "--name", proj, "--spawn", SPAWN]
 
 
@@ -384,8 +392,10 @@ def launch(proj: str) -> tuple[str, str | None]:
     reason = _spawn(sess, proj, cmd, env_opts)
     # A brand-new / never-used project has no thread to --continue; the resume
     # form exits 1. Fall back to a plain fresh launch so create-and-start works.
+    # Log the REAL death reason — this also fires on login-expiry etc., and a
+    # hardcoded "no history" mislabeled those in the audit trail.
     if reason and resuming:
-        log_event("resume", proj, "no history; fresh launch")
+        log_event("resume", proj, f"fresh relaunch after: {reason}")
         reason = _spawn(sess, proj, fresh_cmd(proj), env_opts)
     return ("failed", reason) if reason else ("launched", None)
 
