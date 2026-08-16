@@ -23,6 +23,7 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -334,11 +335,14 @@ def has_desk_thread(proj: str) -> bool:
     entrypoint "cli" (or "claude-vscode"); phone-born relay-only sessions leave only
     "sdk-cli" mirrors that `--continue` refuses. Deciding up front skips the doomed resume
     attempt entirely — its death can also land AFTER _spawn's 3s aliveness window, which
-    read as a phantom "launched" whose session then evaporated (remain-on-exit already off)."""
+    read as a phantom "launched" whose session then evaporated (remain-on-exit already off).
+    Only the first 256 KiB of each transcript is read: the entrypoint field appears within
+    the first records of every real transcript, and transcripts grow to hundreds of MB —
+    slurping them whole made every launch tap pay for the largest project's history."""
     slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.join(PARENT, proj))
     for f in CLAUDE_PROJECTS.glob(f"{slug}/*.jsonl"):
-        with contextlib.suppress(OSError):
-            if re.search(rb'"entrypoint":"(cli|claude-vscode)"', f.read_bytes()):
+        with contextlib.suppress(OSError), open(f, "rb") as fh:
+            if re.search(rb'"entrypoint":"(cli|claude-vscode)"', fh.read(262144)):
                 return True
     return False
 
@@ -394,8 +398,15 @@ def launch(proj: str) -> tuple[str, str | None]:
     # sessions only, not local desk ones. The sessions the RC server spawns
     # inherit this env, so rc_status.py can tell when a remote turn is live on
     # the shared working tree.
+    # PATH goes in per-session (-e), not the plist: tmux sessions inherit the tmux
+    # SERVER's environment, set by whoever started the server first, so a plist PATH
+    # is non-deterministic; -e is order-immune and carries to the future systemd host.
+    # Without ~/.local/bin, MCP servers and hooks claude spawns by name (uvx, uv,
+    # ruff) fail on phone-launched sessions while working at the desk.
     env_opts = ["-e", f"RC_REMOTE={sess}", "-e", f"RC_PROJECT={proj}",
-                "-e", f"RC_SHARE_DIR={SHARE}"]
+                "-e", f"RC_SHARE_DIR={SHARE}",
+                "-e", f"PATH={os.path.expanduser('~/.local/bin')}:"
+                      f"{os.environ.get('PATH', '/usr/bin:/bin')}"]
     if os.environ.get("RC_STATE_DIR"):
         env_opts += ["-e", f"RC_STATE_DIR={os.environ['RC_STATE_DIR']}"]
     cmd, resuming = launch_cmd(proj)
@@ -462,7 +473,9 @@ def js(x: object) -> str:
 def _fill(template: str, values: dict[str, str]) -> bytes:
     """Fill __PLACEHOLDER__s in one pass, so injected data (a project dir named __LOGIN__,
     which NAME_RE permits) can't be re-scanned and rewritten by a later replacement."""
-    pat = re.compile("|".join(map(re.escape, values)))
+    # longest key first: re alternation takes the first match, so a key that prefixes
+    # another (a future __HOST__/__HOSTS__ pair) must not shadow the longer one.
+    pat = re.compile("|".join(map(re.escape, sorted(values, key=len, reverse=True))))
     return pat.sub(lambda m: values[m.group()], template).encode()
 
 
@@ -487,11 +500,15 @@ def human_size(n: float) -> str:
 
 
 def crumb_html(rel: str) -> str:
+    """rel arrives still percent-encoded (the raw URL remainder _files hands over).
+    Decode each segment, then requote: quoting the encoded form doubled the escapes
+    ("my file" -> href /files/my%2520file, a 404, labeled "my%20file")."""
     out = ['<a href="/files">rc-share</a>']
     acc = ""
     for seg in (s for s in rel.split("/") if s):
-        acc += "/" + quote(seg)
-        out.append(f'<a href="/files{acc}">{html.escape(seg)}</a>')
+        seg_dec = unquote(seg)
+        acc += "/" + quote(seg_dec)
+        out.append(f'<a href="/files{acc}">{html.escape(seg_dec)}</a>')
     return '<span class=sep>/</span>'.join(out)
 
 
@@ -518,7 +535,7 @@ def rows_html(target: str, rel: str) -> str:
         except OSError:
             continue
         href = f"/files{base}/{quote(name)}"
-        is_dir = os.path.isdir(full)
+        is_dir = stat.S_ISDIR(st.st_mode)  # from the stat above; os.stat followed symlinks too
         data = (f'data-d="{int(is_dir)}" data-n="{html.escape(name.lower(), quote=True)}" '
                 f'data-s="{st.st_size}" data-t="{int(st.st_mtime)}"')
         if is_dir:

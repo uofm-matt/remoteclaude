@@ -166,6 +166,20 @@ class OrchestrationTest(unittest.TestCase):
         self.assertTrue(any("remain-on-exit on" in c for c in cmds))
         self.assertTrue(any("remain-on-exit off" in c for c in cmds))
 
+    def test_launch_injects_local_bin_on_path(self):
+        # Phone-launched sessions inherit a truncated PATH missing ~/.local/bin, so MCP
+        # servers/hooks claude spawns by name (uvx, uv, ruff) fail remotely. launch()
+        # must prepend it via a per-session -e (the plist form is non-deterministic:
+        # tmux sessions inherit whichever env started the tmux SERVER first).
+        rc_launcher.RESUME = "off"
+        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
+        newsession = next(c for c in self.calls if "new-session" in " ".join(map(str, c)))
+        path_arg = next(a for a in newsession if str(a).startswith("PATH="))
+        self.assertEqual(newsession[newsession.index(path_arg) - 1], "-e")
+        local_bin = os.path.expanduser("~/.local/bin")
+        self.assertTrue(path_arg.startswith(f"PATH={local_bin}:"), path_arg)
+
     def test_launch_dead_pane_reports_reason_and_kills(self):
         rc_launcher.RESUME = "off"
         self.responses = {

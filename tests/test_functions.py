@@ -167,16 +167,31 @@ class FunctionTest(unittest.TestCase):
         self.assertIn('href="/files/sub">sub</a>', html)
         self.assertIn('href="/files/sub/deep">deep</a>', html)
 
+    def test_crumb_html_encoded_rel_not_double_encoded(self):
+        # _files hands crumb_html the still-percent-encoded URL remainder; requoting
+        # the encoded segment produced /files/my%2520file (404) labeled "my%20file".
+        share = os.path.realpath(os.path.join(self.tmp, "share"))
+        os.makedirs(os.path.join(share, "my file"))
+        rc_launcher.SHARE = share
+        crumb = rc_launcher.crumb_html("/my%20file")
+        self.assertIn('<a href="/files/my%20file">my file</a>', crumb)  # once-encoded, decoded label
+        self.assertNotIn("%2520", crumb)
+        page = rc_launcher.share_page(os.path.join(share, "my file"), "/my%20file").decode()
+        self.assertIn('<a href="/files/my%20file">my file</a>', page)
+        self.assertNotIn("%2520", page)
+
     def test_rows_html_carries_sort_keys_dirs_first(self):
         share = os.path.realpath(os.path.join(self.tmp, "share"))
         os.makedirs(os.path.join(share, "sub"))          # a directory
         Path(share, "a.txt").write_text("xxxxx")          # a 5-byte file
         Path(share, "b.log").write_text("")               # a 0-byte file
+        Path(share, "Zoo.txt").write_text("y")            # mixed case — the key must lowercase
         rc_launcher.SHARE = share
         rows = rc_launcher.rows_html(share, "")
         self.assertIn('data-d="1"', rows)                 # the dir carries is-dir=1
         self.assertIn('data-d="0"', rows)                 # a file carries is-dir=0
         self.assertIn('data-n="a.txt"', rows)             # lowercased name key
+        self.assertIn('data-n="zoo.txt"', rows)           # "Zoo.txt" lowercased, not passed through
         self.assertIn('data-s="5"', rows)                 # size in bytes for the client sort
         self.assertRegex(rows, r'data-t="\d+"')           # mtime key
         self.assertLess(rows.index("sub/"), rows.index("a.txt"))  # dirs precede files (no-JS default)
