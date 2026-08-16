@@ -1,7 +1,7 @@
 # Remote Control launcher
 
 Start a Claude Code **Remote Control** session on the Mac from your phone, in
-any one of your ~57 project directories, with that project's full context —
+any one of dozens of project directories, with that project's full context —
 without SSH, without leaving VS Code running, and without the Mac running
 Tailscale.
 
@@ -107,16 +107,26 @@ Launches and stops are logged with Mountain-Time stamps to `/tmp/rc-launcher.log
 By default every tap **reopens the project's most recent thread** (`claude --continue
 --remote-control <proj>`), so the phone lands where you left off — the recent turns are
 right there, the full history scrollable above. Same "most recent session for this dir"
-rule the VS Code extension uses, so a thread you started at your desk continues on the
-phone.
+rule the VS Code extension uses.
 
-Because the phone would then be a second live client on that thread, the launcher first
-**hands the project off**: it closes any live *desktop* claude session (VS Code or
+Resume works in **both directions**. Fresh same-dir launches use the local-first
+`--remote-control` *flag* form, so desk and phone converge on one thread pool: a thread
+started at the desk continues on the phone, and a thread started from the phone continues
+at the desk with plain `claude --continue`. One historical exception: sessions born
+relay-only under the old `remote-control` *subcommand* form left transcripts neither side
+can reopen — those threads remain app-only. A project affected that way self-heals on its
+next tap (the launcher detects there's nothing desk-resumable and launches fresh,
+flag-form), and is symmetric from then on. Separately, current Claude Code auto-pairs
+interactive desk sessions with the phone app — one session, multiple viewers — which is
+why a desk session can appear on the phone with no launcher involvement at all.
+
+Because a resumed thread would make the phone a second live client on it, the launcher
+first **hands the project off**: it closes any live *desktop* claude session (VS Code or
 terminal) whose working dir is inside that project — SIGTERM, wait for it to flush its
 transcript and exit, SIGKILL only if it won't. Scoped strictly by process cwd, so a
-desktop session on any *other* project keeps running. The conversation is never lost
-(it's on disk — that's what you resume), but a desktop session caught mid-turn has that
-turn cut off.
+desktop session on any *other* project keeps running. The thread survives the handoff
+(the transcript is on disk — that's what the phone resumes), but a desktop session caught
+mid-turn has that turn cut off.
 
 A brand-new project (create-and-start) has no thread to continue: the resume form exits
 1, and the launcher falls back to a normal fresh launch automatically, so nothing breaks.
@@ -172,6 +182,40 @@ The Android share target uploads are **resumable**: bytes stream into a `.rcpart
 the app `HEAD`s the path for `X-Rc-Have`, then `PUT`s from that offset with `X-Rc-Total`,
 and the server renames to the final name once the temp reaches the total. Matters over a
 flaky link (Starlink/Tailscale), where restarting an 82 MB upload from zero is painful.
+
+## Upload protocol
+
+The resumable upload is one wire contract implemented three times: the Python server
+(`rc_launcher.py` `_upload`/`do_HEAD`), the browser JS on the `/files` page, and the
+Android share target (`UploadActivity`/`UploadLogic`). Change one, check the other two.
+
+- `PUT /files/<path>` streams the body into a hidden `.rcpart` temp, never the final
+  name. Request headers:
+  - `X-Rc-Offset` — write position in the temp (default 0); the temp is truncated to
+    this offset before writing, so a retried slice overwrites cleanly.
+  - `X-Rc-Total` — final file size. Defaults to offset + body length; an explicit value
+    `<= 0` (or `< offset`) is rejected 400.
+  - `X-Rc-Id` — the client's resume identity for the file (the browser uses
+    `size-lastModified`). The temp is keyed by `sha1(id)[:12]`, so a stale partial from
+    a *different* file of the same name resolves to a different temp and never merges
+    into the new upload.
+- `HEAD /files/<path>` (same `X-Rc-Id`) answers `X-Rc-Have`: bytes already held in the
+  temp, 0 if none. Clients probe before and between PUTs and send from that offset. A
+  failed probe means *unknown*, not zero — re-probe rather than restart at 0, which
+  would truncate the held partial.
+- Responses: a PUT that leaves the temp short of the total returns
+  `{"ok":true,"done":false,"have":N}`; `{"done":true}` comes only on finalize, when the
+  temp reaches `X-Rc-Total` and is `os.replace`d to the final name — atomic, so a
+  reader never sees a partial under the real name. If the client's offset is ahead of
+  what the server holds, the server answers `409 {"error":"gap","have":N}` and the
+  client backs down to `have`.
+- A dropped connection keeps the partial on disk for the next resume; only finalize or
+  the sweep removes it.
+- Single-writer assumption: clients upload sequentially (one PUT in flight per
+  target + id), so the temp needs no lock. A concurrent overlap could corrupt only the
+  partial; the finalized file stays atomic regardless.
+- Sweep: partials with no writes for 6 h are deleted (an interrupted upload that never
+  resumed).
 
 ## Verify
 
@@ -239,7 +283,7 @@ login, and it's the same lever the stale-ghost note suggests, so skip it remotel
 ## Design decisions (don't "helpfully" undo these)
 
 - **One launcher in `~/projects`, on-demand per-project launch** — not one
-  always-on RC server per project. With ~57 projects, per-project daemons don't
+  always-on RC server per project. With dozens of projects, per-project daemons don't
   scale; a single parent-folder RC server would read files but wouldn't anchor
   any project's `CLAUDE.md`/`.claude/`. The launch-in-root model is the only one
   that preserves full per-project context.
@@ -270,7 +314,7 @@ login, and it's the same lever the stale-ghost note suggests, so skip it remotel
   password in clear text. `tailscale serve` was rejected for the same reason the Mac runs
   no Tailscale: it needs `tailscaled` on the Mac.
 
-## Eval notes (the-mac, grounded against the real machine)
+## Eval notes (grounded against the real machine)
 
 - `claude remote-control` confirmed in v2.1.169; flags `--name`, `--spawn`
   (`same-dir`/`worktree`/`session`), `--capacity` (default 32), `--permission-mode`
@@ -285,6 +329,6 @@ login, and it's the same lever the stale-ghost note suggests, so skip it remotel
   fresh cleanly under `-p`. Desktop-vs-RC sessions are told apart by exe basename
   (`claude`) + absence of `remote-control` in argv; each is tied to a project by its cwd
   (`lsof -d cwd`).
-- Projects live in `~/projects` (57 dirs), not `~/code`/30.
+- Projects live in `~/projects` (dozens of dirs), not `~/code`.
 - `tmux` was not installed; `install.sh` adds it.
 - `python3` for the agent: `/opt/homebrew/bin/python3`.
