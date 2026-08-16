@@ -90,7 +90,8 @@ background:transparent;animation:sp .7s linear infinite}
 .git{color:var(--mut);font-size:10px;max-width:34vw;overflow:hidden;text-overflow:ellipsis;
 white-space:nowrap;flex:0 0 auto;letter-spacing:.2px}
 .git.dirty{color:#f59e0b}
-.tag{color:var(--accent);font-size:11px}
+.tag{color:var(--accent);font-size:12px}
+.tag.tagdesk{font-size:13px}
 .x{appearance:none;border:none;background:transparent;color:var(--mut);
 font:inherit;font-size:18px;line-height:1;padding:6px 10px;border-radius:8px;
 flex:0 0 auto;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -141,7 +142,8 @@ function row(n){
   const desk=!live&&!starting&&DESK.has(n);  // live at the desk (auto-paired) — a tap takes it over
   if(starting)li.className='starting';
   const dot=starting?'spin':st==='working'?'on work':st==='waiting'?'wait':live?'on':desk?'desk':'';
-  const tag=starting?'starting&hellip;':st==='working'?'working':st==='waiting'?'waiting':live?'live':desk?'desk':'';
+  // where the session lives: 📱 = launcher/tmux (phone), 🖥 = plain desk claude
+  const tag=starting?'starting&hellip;':st==='working'?'\\uD83D\\uDCF1 working':st==='waiting'?'\\uD83D\\uDCF1 waiting':live?'\\uD83D\\uDCF1':desk?'\\uD83D\\uDDA5\\uFE0F':'';
   const git=g?'<span class="git'+(g.d?' dirty':'')+'" title="git branch">'+esc(g.b)+(g.d?' \\u25cf':'')+'</span>':'';
   li.innerHTML='<span class="dot'+(dot?' '+dot:'')+'"></span>'+
     '<span class=nm>'+(pin?'\\u2605 ':'')+n+'</span>'+git+
