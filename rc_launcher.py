@@ -487,6 +487,20 @@ def stop(proj: str) -> tuple[str, str | None]:
     return "stopped", None
 
 
+def desk_stop(proj: str) -> tuple[str, str | None]:
+    """Gracefully close the project's desk session(s) from the phone: the same
+    SIGTERM -> wait -> SIGKILL as takeover, so claude flushes its transcript and
+    deregisters from the app pairing — the thread stays resumable afterwards
+    (desk `claude` or a launcher tap both pick it up)."""
+    global _desk_cache
+    pids = takeover(proj)
+    if pids:
+        log_event("stopdesk", proj, ",".join(map(str, pids)))
+    with _desk_lock:
+        _desk_cache = (0.0, [])  # drop the scan cache so the badge clears on the next poll
+    return ("stopped" if pids else "idle"), None
+
+
 def create(proj: str) -> tuple[str, str | None]:
     """Make a new project dir under PARENT, git-init it, drop a CLAUDE.md stub.
 
@@ -845,7 +859,10 @@ class Handler(BaseHTTPRequestHandler):
             if proj not in projects():
                 return self._send(404, b'{"error":"unknown project"}',
                                   "application/json")
-            status, reason = launch(proj) if u.path == "/launch" else stop(proj)
+            if u.path == "/stop" and q.get("desk", [""])[0] == "1":
+                status, reason = desk_stop(proj)  # the ✕ on a desk-badged row
+            else:
+                status, reason = launch(proj) if u.path == "/launch" else stop(proj)
             log_event(u.path[1:], proj, status)
             if q.get("json", [""])[0] == "1":
                 payload = {"status": status, "proj": proj}

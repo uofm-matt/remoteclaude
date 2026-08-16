@@ -148,9 +148,9 @@ function row(n){
   li.innerHTML='<span class="dot'+(dot?' '+dot:'')+'"></span>'+
     '<span class=nm>'+(pin?'\\u2605 ':'')+n+'</span>'+git+
     '<span class="tag'+(st==='waiting'?' tagwait':desk?' tagdesk':'')+'"'+(desk?' title="live at the desk \\u2014 tapping takes it over"':'')+'>'+tag+'</span>'+
-    (live&&!starting?'<button class=x title="close session" aria-label="close '+n+'">&#10005;</button>':'');
+    ((live||desk)&&!starting?'<button class=x title="'+(desk?'close desk session':'close session')+'" aria-label="close '+n+'">&#10005;</button>':'');
   li.onclick=()=>go(n);
-  if(live&&!starting)li.querySelector('.x').onclick=e=>{e.stopPropagation();stopSess(n);};
+  if((live||desk)&&!starting)li.querySelector('.x').onclick=e=>{e.stopPropagation();stopSess(n,desk);};
   // long-press (touch or mouse) toggles the pin; togglePin sets noTap so the trailing
   // synthetic click that lands on the re-rendered row doesn't also launch the project.
   let t;const s0=()=>{t=setTimeout(()=>togglePin(n),550);},c0=()=>clearTimeout(t);
@@ -204,12 +204,13 @@ async function go(n){
     toast(j.status==='already'?n+' already live':'\\u2713 launched '+n);
   }catch(e){STARTING.delete(n);render();toast('failed: '+n);}
 }
-async function stopSess(n){
+async function stopSess(n,isDesk){
   toast('closing '+n+'\\u2026');
   try{
-    const r=await fetch('/stop?json=1&proj='+encodeURIComponent(n));
+    const r=await fetch('/stop?json=1&proj='+encodeURIComponent(n)+(isDesk?'&desk=1':''));
     await r.json();
-    RUNNING.delete(n);render();
+    if(isDesk)DESK.delete(n);else RUNNING.delete(n);
+    render();
     toast('\\u2715 closed '+n);
   }catch(e){toast('failed to close '+n);}
 }

@@ -144,6 +144,33 @@ class OrchestrationTest(unittest.TestCase):
         self.assertEqual(rc_launcher.takeover("proj"), [111])
         self.assertIn((111, rc_launcher.signal.SIGTERM), self.killed)
 
+    def test_desk_stop_graceful_and_clears_cache(self):
+        rc_launcher._desk_cache = (9e18, ["proj"])  # a warm cache the stop must invalidate
+        root = os.path.join(rc_launcher.PARENT, "proj")
+
+        def run(cmd, **kw):
+            self.calls.append(cmd)
+            key = " ".join(map(str, cmd))
+            if "pgrep" in key:
+                return proc(stdout="111\n")
+            if "comm=" in key:
+                return proc(stdout="claude\n")
+            if "command=" in key:
+                return proc(stdout="claude --continue\n")
+            if "-Fn" in key:
+                return proc(stdout=f"n{root}\n")
+            return proc()
+        rc_launcher.subprocess.run = run
+        self.alive = set()  # dies cleanly on SIGTERM -> no SIGKILL escalation
+        self.assertEqual(rc_launcher.desk_stop("proj"), ("stopped", None))
+        self.assertIn((111, rc_launcher.signal.SIGTERM), self.killed)   # graceful first
+        self.assertNotIn((111, rc_launcher.signal.SIGKILL), self.killed)
+        self.assertEqual(rc_launcher._desk_cache, (0.0, []))  # badge clears on next poll
+
+    def test_desk_stop_idle_when_nothing_running(self):
+        rc_launcher.subprocess.run = lambda cmd, **kw: proc(stdout="")
+        self.assertEqual(rc_launcher.desk_stop("proj"), ("idle", None))
+
     def test_desk_projects_finds_plain_claude_by_cwd(self):
         rc_launcher._desk_cache = (0.0, [])  # reset the TTL cache; restored value irrelevant
         root = os.path.join(rc_launcher.PARENT, "proj")
