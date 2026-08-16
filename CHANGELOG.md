@@ -4,6 +4,26 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-16
 
+- Backlog paydown across four areas (each independently reviewed before merge):
+  - Browser upload client rewritten around a tested pure policy (`rc_upload.js`, spliced
+    into the files page; 11 node-test cases mirroring the Android `UploadLogicTest`).
+    Fixes four client bugs: a failed HEAD probe was treated as offset 0 (restarting the
+    PUT truncates the server's kept partial — the exact policy the Kotlin client pins
+    against), zero-byte files faked success, a failed upload's message was wiped by the
+    unconditional page reload, and the sort tie-break inherited the primary direction.
+    CI now runs the JS suite.
+  - Launcher: breadcrumb links no longer double-percent-encode (dirs with spaces/# were
+    404ing from the crumb), phone sessions get `~/.local/bin` on PATH via a per-session
+    tmux `-e` (MCP servers/hooks spawned by name failed remotely; the plist route was
+    non-deterministic — tmux sessions inherit the server's env), `has_desk_thread` reads
+    only the first 256KB per transcript (one project's transcript is 525MB), `_fill`
+    orders keys longest-first, `rows_html` drops a redundant stat syscall, and the
+    sort-key test gained a mixed-case fixture.
+  - Android share target: zero-byte files now report "empty file — skipped" instead of
+    silently faking success (the server rejects total<=0 by design).
+  - RUNBOOK: documented the X-Rc-* resumable-upload wire contract (implemented in three
+    runtimes with no spec until now), corrected the resume-symmetry claims to the
+    post-fix reality, and dropped stray personal traces.
 - Skip the resume attempt when nothing is locally resumable: `launch()` now checks for a
   desk (`entrypoint: cli`/`claude-vscode`) transcript up front and goes straight to the
   fresh flag-form launch. The doomed `--continue` on phone-born projects could die *after*

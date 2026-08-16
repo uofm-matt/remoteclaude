@@ -54,6 +54,11 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Later — low
 
+> **DONE 2026-08-16** — `stat.S_ISDIR` reuse, mixed-case `Zoo.txt` fixture, `_BASE` CSS splice
+> (the 3 byte-identical rules only — the long-press blocks are structurally divergent between
+> pages and were deliberately left per-page), `coverage.json` gitignored, RUNBOOK traces
+> dropped, and the upload wire contract documented in RUNBOOK. All merged after review.
+
 - [ ] `rows_html` calls `os.stat` then `os.path.isdir` on each entry (two syscalls) — reuse
   `stat.S_ISDIR(st.st_mode)` from the first stat.
 - [ ] Add a mixed-case fixture so `rows_html`'s `data-n` `.lower()` sort key is actually
@@ -65,11 +70,24 @@ before you schedule from a stale entry: check the claim still holds, then act.
 - [ ] Document the `X-Rc-Offset/Total/Id/Have` resumable-upload protocol in one RUNBOOK section
   — it's implemented three times (Python server, browser JS, Kotlin) with no shared spec.
 
+- [ ] **Show live desk sessions on the launcher page.** The launcher's green dots track only
+  its own tmux `rc-*` sessions; a desk-started `claude` (auto-paired, phone-drivable) shows as
+  not-running. Scan `~/.claude/projects/*/bridge-pointer.json`, pid-check each, and render a
+  distinct "desk" badge — so the page shows where each project is live and that a tap would
+  take it over. Cheap (file reads + `os.kill(pid, 0)`), no process sniffing.
+
 ## Deferred — needs a decision or new tooling
 
 - [ ] Extract the rc-share file server into `rc_files.py`. High-impact: the confinement tests
   inject `SHARE` as a live global, and `js` / `log_event` / `MT` are shared with the launcher.
   Do it as its own change with behavioral-equivalence checks, not folded into other work.
+> **DONE 2026-08-16** — `rc_upload.js` (pure resume policy, spliced into the files page) +
+> `tests/js/rc_upload.test.cjs` under `node --test`, wired into CI. Fixed the four client
+> bugs found by review along the way. The sort comparator stays in-page (visual-only risk).
+
 - [ ] Add a JS test harness (Node) for the client upload-resume and sort logic, currently
   untested by design.
+
+> **DONE 2026-08-16** — CHANGELOG.md started during the token remediation.
+
 - [ ] Add `CHANGELOG.md`.
