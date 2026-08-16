@@ -4,6 +4,11 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-16
 
+- Launcher shows live desk sessions: a blue "desk" dot/tag on projects where a plain
+  interactive `claude` is running (auto-paired with the phone app but invisible to the
+  launcher's tmux-based dots — the owner hit this twice in one afternoon). Detection is a
+  TTL-cached pgrep/cwd scan; bridge-pointer.json was rejected after live testing (desk
+  sessions don't reliably write one; stale ones point at dead pids).
 - Backlog paydown across four areas (each independently reviewed before merge):
   - Browser upload client rewritten around a tested pure policy (`rc_upload.js`, spliced
     into the files page; 11 node-test cases mirroring the Android `UploadLogicTest`).

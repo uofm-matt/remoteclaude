@@ -144,6 +144,34 @@ class OrchestrationTest(unittest.TestCase):
         self.assertEqual(rc_launcher.takeover("proj"), [111])
         self.assertIn((111, rc_launcher.signal.SIGTERM), self.killed)
 
+    def test_desk_projects_finds_plain_claude_by_cwd(self):
+        rc_launcher._desk_cache = (0.0, [])  # reset the TTL cache; restored value irrelevant
+        root = os.path.join(rc_launcher.PARENT, "proj")
+
+        def run(cmd, **kw):
+            self.calls.append(cmd)
+            key = " ".join(map(str, cmd))
+            if "pgrep" in key:
+                return proc(stdout="111\n222\n333\n")
+            if "comm=" in key:
+                return proc(stdout="claude\n")
+            if "command=" in key and "222" in key:
+                return proc(stdout="claude --remote-control proj\n")  # RC server -> filtered
+            if "command=" in key:
+                return proc(stdout="claude --continue\n")
+            if "-Fn" in key and "111" in key:
+                return proc(stdout=f"n{root}\n")          # desk session inside proj
+            if "-Fn" in key and "333" in key:
+                return proc(stdout="n/somewhere/else\n")  # outside PARENT -> filtered
+            return proc()
+        rc_launcher.subprocess.run = run
+        self.assertEqual(rc_launcher.desk_projects(), ["proj"])
+        # second call inside the TTL is served from cache: no new pgrep forked
+        pgreps = len([c for c in self.calls if "pgrep" in " ".join(map(str, c))])
+        rc_launcher.desk_projects()
+        self.assertEqual(
+            len([c for c in self.calls if "pgrep" in " ".join(map(str, c))]), pgreps)
+
     # --- launch / stop ---
 
     def test_launch_already_running(self):

@@ -66,6 +66,7 @@ SHARE = os.path.realpath(os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc
 RCPART_TTL = 6 * 3600  # abandoned .rcpart uploads (no writes in this long) get swept
 GIT_TTL = float(os.environ.get("RC_GIT_TTL", "15"))  # per-project git state is cached this long
 GIT_STATUS_TIMEOUT = float(os.environ.get("RC_GIT_STATUS_TIMEOUT", "3"))  # cap a hung `git status`
+DESK_TTL = float(os.environ.get("RC_DESK_TTL", "10"))  # desk-session scan is cached this long
 
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -297,6 +298,46 @@ def desktop_sessions(proj: str) -> list[int]:
     return pids
 
 
+_desk_lock = threading.Lock()
+_desk_cache: tuple[float, list[str]] = (0.0, [])
+
+
+def _desk_scan() -> list[str]:
+    """Projects with a live plain (desk) claude rooted inside them. Current Claude Code
+    auto-pairs interactive sessions with the phone app, so these are phone-drivable —
+    but invisible to the launcher's tmux-based dots. Same probe chain as
+    desktop_sessions(), across all projects at once. (bridge-pointer.json was rejected
+    as the signal: live desk sessions don't reliably write one, and stale ones point at
+    dead pids.)"""
+    out: set[str] = set()
+    root = PARENT + os.sep
+    for pid in _run([PGREP, "-f", "claude"]).split():
+        comm = _run([PS, "-o", "comm=", "-p", pid]).strip()
+        if os.path.basename(comm) != "claude":
+            continue
+        if "remote-control" in _run([PS, "-o", "command=", "-p", pid]):
+            continue  # an RC server — the tmux dot already shows it
+        cwd = _pid_cwd(pid)
+        if cwd and cwd.startswith(root):
+            out.add(cwd[len(root):].split(os.sep)[0])
+    return sorted(out)
+
+
+def desk_projects() -> list[str]:
+    """TTL-cached _desk_scan, so the 5s /status poll doesn't fork pgrep/ps/lsof
+    per viewer per tick."""
+    global _desk_cache
+    now = time.monotonic()
+    with _desk_lock:
+        ts, val = _desk_cache
+        if ts > now:
+            return val
+    val = _desk_scan()
+    with _desk_lock:
+        _desk_cache = (now + DESK_TTL, val)
+    return val
+
+
 def takeover(proj: str) -> list[int]:
     """Close desktop claude sessions for proj so a resuming remote session isn't
     a second client on the thread. SIGTERM first (graceful: lets each flush its
@@ -486,6 +527,7 @@ def page() -> bytes:
         "__RUNNING__": js(sorted(running())),
         "__STATES__": js(session_states()),
         "__GITSTATES__": js(git_states(projs)),
+        "__DESK__": js(desk_projects()),
         "__LOGIN__": js(login_status()),
         "__HOST__": html.escape(HOST),
     })
@@ -783,7 +825,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._files(u.path)
         if u.path == "/status":
             return self._json({"running": sorted(running()), "login": login_status(),
-                               "states": session_states()})
+                               "states": session_states(), "desk": desk_projects()})
         if u.path == "/create":
             proj = q.get("proj", [""])[0]
             status, reason = create(proj)

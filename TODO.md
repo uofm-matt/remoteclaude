@@ -70,6 +70,11 @@ before you schedule from a stale entry: check the claim still holds, then act.
 - [ ] Document the `X-Rc-Offset/Total/Id/Have` resumable-upload protocol in one RUNBOOK section
   — it's implemented three times (Python server, browser JS, Kotlin) with no shared spec.
 
+> **DONE 2026-08-16** — blue "desk" dot + tag on the launcher, fed by a TTL-cached process
+> scan (`desk_projects()`, in `/status` and the page). bridge-pointer.json was rejected as
+> the signal after live testing: desk sessions don't reliably write one, and stale ones
+> point at dead pids. Tooltip says a tap takes the session over.
+
 - [ ] **Show live desk sessions on the launcher page.** The launcher's green dots track only
   its own tmux `rc-*` sessions; a desk-started `claude` (auto-paired, phone-drivable) shows as
   not-running. Scan `~/.claude/projects/*/bridge-pointer.json`, pid-check each, and render a

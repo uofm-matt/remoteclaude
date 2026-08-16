@@ -84,6 +84,8 @@ background:transparent;animation:sp .7s linear infinite}
 @keyframes pulse{0%,100%{box-shadow:0 0 3px var(--accent)}50%{box-shadow:0 0 12px var(--accent)}}
 .dot.wait{background:#f59e0b;border-color:#f59e0b;box-shadow:0 0 8px #f59e0b}
 .tag.tagwait{color:#f59e0b}
+.dot.desk{background:var(--blue);border-color:var(--blue);box-shadow:0 0 8px var(--blue)}
+.tag.tagdesk{color:var(--blue)}
 .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--name)}
 .git{color:var(--mut);font-size:10px;max-width:34vw;overflow:hidden;text-overflow:ellipsis;
 white-space:nowrap;flex:0 0 auto;letter-spacing:.2px}
@@ -123,7 +125,7 @@ text-align:center}
 const PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__), STARTING=new Set();
 const GITSTATES=__GITSTATES__;
 const NAME_RE=/^[A-Za-z0-9._-]+$/;
-let LOGIN=__LOGIN__, STATES=__STATES__, noTap=0;
+let LOGIN=__LOGIN__, STATES=__STATES__, DESK=new Set(__DESK__), noTap=0;
 const $=s=>document.querySelector(s), RK='rc_recent', PK='rc_pinned';
 const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const getRecent=()=>{try{return JSON.parse(localStorage.getItem(RK))||[]}catch(e){return[]}};
@@ -136,13 +138,14 @@ const togglePin=n=>{const p=getPinned(),on=!p.includes(n);
 function row(n){
   const li=document.createElement('li');li.dataset.n=n;
   const live=RUNNING.has(n), starting=STARTING.has(n), st=live?STATES[n]:'', g=GITSTATES[n], pin=getPinned().includes(n);
+  const desk=!live&&!starting&&DESK.has(n);  // live at the desk (auto-paired) — a tap takes it over
   if(starting)li.className='starting';
-  const dot=starting?'spin':st==='working'?'on work':st==='waiting'?'wait':live?'on':'';
-  const tag=starting?'starting&hellip;':st==='working'?'working':st==='waiting'?'waiting':live?'live':'';
+  const dot=starting?'spin':st==='working'?'on work':st==='waiting'?'wait':live?'on':desk?'desk':'';
+  const tag=starting?'starting&hellip;':st==='working'?'working':st==='waiting'?'waiting':live?'live':desk?'desk':'';
   const git=g?'<span class="git'+(g.d?' dirty':'')+'" title="git branch">'+esc(g.b)+(g.d?' \\u25cf':'')+'</span>':'';
   li.innerHTML='<span class="dot'+(dot?' '+dot:'')+'"></span>'+
     '<span class=nm>'+(pin?'\\u2605 ':'')+n+'</span>'+git+
-    '<span class="tag'+(st==='waiting'?' tagwait':'')+'">'+tag+'</span>'+
+    '<span class="tag'+(st==='waiting'?' tagwait':desk?' tagdesk':'')+'"'+(desk?' title="live at the desk \\u2014 tapping takes it over"':'')+'>'+tag+'</span>'+
     (live&&!starting?'<button class=x title="close session" aria-label="close '+n+'">&#10005;</button>':'');
   li.onclick=()=>go(n);
   if(live&&!starting)li.querySelector('.x').onclick=e=>{e.stopPropagation();stopSess(n);};
@@ -231,7 +234,7 @@ async function poll(){
   try{
     const r=await fetch('/status');const j=await r.json();
     RUNNING.clear();j.running.forEach(n=>RUNNING.add(n));
-    STATES=j.states||{};
+    STATES=j.states||{};DESK=new Set(j.desk||[]);
     LOGIN=j.login;authBar();render();
   }catch(e){}
 }
