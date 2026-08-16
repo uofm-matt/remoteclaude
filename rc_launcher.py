@@ -60,6 +60,7 @@ RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
 TAKEOVER = os.environ.get("RC_TAKEOVER", "1") not in ("0", "off", "")
 HOST = socket.gethostname().split(".")[0]
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")
+CLAUDE_PROJECTS = Path(os.path.expanduser("~/.claude/projects"))  # per-project transcripts
 SHARE = os.path.realpath(os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc-share")))
 RCPART_TTL = 6 * 3600  # abandoned .rcpart uploads (no writes in this long) get swept
 GIT_TTL = float(os.environ.get("RC_GIT_TTL", "15"))  # per-project git state is cached this long
@@ -328,6 +329,20 @@ def fresh_cmd(proj: str) -> list[str]:
     return [CLAUDE, "remote-control", "--name", proj, "--spawn", SPAWN]
 
 
+def has_desk_thread(proj: str) -> bool:
+    """Anything locally resumable for proj? Desk/flag-form sessions write transcripts with
+    entrypoint "cli" (or "claude-vscode"); phone-born relay-only sessions leave only
+    "sdk-cli" mirrors that `--continue` refuses. Deciding up front skips the doomed resume
+    attempt entirely — its death can also land AFTER _spawn's 3s aliveness window, which
+    read as a phantom "launched" whose session then evaporated (remain-on-exit already off)."""
+    slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.join(PARENT, proj))
+    for f in CLAUDE_PROJECTS.glob(f"{slug}/*.jsonl"):
+        with contextlib.suppress(OSError):
+            if re.search(rb'"entrypoint":"(cli|claude-vscode)"', f.read_bytes()):
+                return True
+    return False
+
+
 def launch_cmd(proj: str) -> tuple[list[str], bool]:
     """The claude invocation for proj, and whether it resumes. Resume is the
     top-level flag form `claude --continue --remote-control <proj>` (the
@@ -384,6 +399,12 @@ def launch(proj: str) -> tuple[str, str | None]:
     if os.environ.get("RC_STATE_DIR"):
         env_opts += ["-e", f"RC_STATE_DIR={os.environ['RC_STATE_DIR']}"]
     cmd, resuming = launch_cmd(proj)
+    if resuming and not has_desk_thread(proj):
+        # Brand-new or phone-born (relay-only history): nothing to --continue. Go
+        # straight to the fresh flag-form launch instead of paying the 3s stall and
+        # racing the aliveness window on an attempt that can only die.
+        log_event("resume", proj, "no desk thread; fresh launch")
+        cmd, resuming = fresh_cmd(proj), False
     # Resume reopens the project's last thread, so the phone would be a second
     # client on it. Hand the project off first: close any live desktop (non-RC)
     # claude rooted inside it, letting it flush its transcript, then launch.

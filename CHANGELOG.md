@@ -4,6 +4,12 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-16
 
+- Skip the resume attempt when nothing is locally resumable: `launch()` now checks for a
+  desk (`entrypoint: cli`/`claude-vscode`) transcript up front and goes straight to the
+  fresh flag-form launch. The doomed `--continue` on phone-born projects could die *after*
+  `_spawn`'s 3s aliveness window — logged as "launched", then the session evaporated with
+  `remain-on-exit` already off (observed live on sandbox: "launched" at 13:46, no tmux session,
+  app showing disconnected). Also removes the permanent 3s stall those projects paid per tap.
 - Fresh same-dir launches use `claude --remote-control <name>` (the top-level flag) instead
   of the `remote-control` subcommand — the subcommand births relay-only threads that neither
   the desk nor the launcher's own resume can ever reopen, so every phone-created project

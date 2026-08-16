@@ -21,6 +21,7 @@ class OrchestrationTest(unittest.TestCase):
         os.makedirs(os.path.join(rc_launcher.PARENT, "proj"))
         rc_launcher.CLAUDE_JSON = os.path.join(self.tmp, "claude.json")
         Path(rc_launcher.CLAUDE_JSON).write_text("{}")
+        rc_launcher.CLAUDE_PROJECTS = Path(self.tmp, "claude-projects")  # empty: no desk thread
         rc_launcher.log_event = lambda *a: None
         self.calls: list = []
         self.responses: dict = {}   # command-substring -> proc(...)
@@ -51,6 +52,13 @@ class OrchestrationTest(unittest.TestCase):
 
     def _cmds(self) -> list[str]:
         return [" ".join(map(str, c)) for c in self.calls]
+
+    def _seed_desk_thread(self, proj: str) -> None:
+        """Write a desk-resumable (entrypoint cli) transcript so launch() takes the resume path."""
+        slug = rc_launcher.re.sub(r"[^A-Za-z0-9]", "-", os.path.join(rc_launcher.PARENT, proj))
+        d = rc_launcher.CLAUDE_PROJECTS / slug
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "s1.jsonl").write_text('{"entrypoint":"cli","type":"user"}\n')
 
     # --- pure command builders ---
 
@@ -170,6 +178,7 @@ class OrchestrationTest(unittest.TestCase):
 
     def test_launch_resume_falls_back_to_fresh(self):
         rc_launcher.RESUME, rc_launcher.SPAWN, rc_launcher.TAKEOVER = "continue", "same-dir", False
+        self._seed_desk_thread("proj")  # a cli thread exists, so the resume path genuinely runs
         panes = iter(["1\n", "0\n"])  # resume _spawn dies, fresh _spawn lives
 
         def run(cmd, **kw):
@@ -189,6 +198,16 @@ class OrchestrationTest(unittest.TestCase):
         self.assertIn("--continue", spawns[0])     # first attempt resumes
         self.assertEqual(spawns[1],                # the fallback is a FRESH flag-form launch
                          f"{rc_launcher.CLAUDE} --remote-control proj")
+
+    def test_launch_skips_resume_without_desk_thread(self):
+        # Brand-new or phone-born (relay-only) project: no cli transcript exists, so launch()
+        # must go STRAIGHT to the fresh flag form — one spawn, no doomed --continue attempt
+        # (whose late death used to read as a phantom "launched" and evaporate).
+        rc_launcher.RESUME, rc_launcher.SPAWN, rc_launcher.TAKEOVER = "continue", "same-dir", False
+        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
+        spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
+        self.assertEqual(spawns, [f"{rc_launcher.CLAUDE} --remote-control proj"])
 
     def test_stop_sigint_then_kill(self):
         self.assertEqual(rc_launcher.stop("proj"), ("stopped", None))
@@ -269,6 +288,7 @@ class OrchestrationTest(unittest.TestCase):
 
     def test_launch_logs_snapshot_and_takeover(self):
         rc_launcher.RESUME, rc_launcher.SPAWN, rc_launcher.TAKEOVER = "continue", "same-dir", True
+        self._seed_desk_thread("proj")  # takeover only guards a real resume; needs a cli thread
         os.environ["RC_SNAPSHOT"] = "1"
         os.environ["RC_STATE_DIR"] = "/tmp/st"
         events = []
