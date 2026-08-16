@@ -24,3 +24,6 @@ jobs:
           coverage report --fail-under=90
           coverage json -q -o coverage.json
           python review/coverage_floor.py 90
+      - name: JS upload-policy tests
+        # quoted glob: node expands it itself; bare directory args were dropped in newer node
+        run: node --test 'tests/js/*.test.cjs'

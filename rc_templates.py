@@ -1,6 +1,12 @@
 """HTML/CSS/JS templates for the launcher, kept out of rc_launcher.py so the backend
 isn't buried under ~300 lines of embedded frontend. Placeholders (__X__) are filled at
-request time by page()/share_page(); these are plain strings with no module deps."""
+request time by page()/share_page(). One file read happens at import: rc_upload.js
+(the tested, DOM-free upload-resume policy) is spliced into FILES_PAGE like the
+_PTR/_THEME constants."""
+
+from pathlib import Path
+
+_UPLOAD = (Path(__file__).parent / "rc_upload.js").read_text()
 
 # shared by both pages (filled into __PTR__ below) — the pull-to-refresh overlay
 _PTR = """(function(){var y0=0,a=false,dy=0,T=64,se=document.scrollingElement||document.documentElement;
@@ -18,6 +24,13 @@ addEventListener('touchend',function(){if(!a)return;a=false;if(dy>T){b.style.hei
 _THEME = """:root{--bg:#0b0f14;--panel:#121821;--row:#161d28;--row2:#1b2330;--fg:#d7e0ea;--mut:#7c8a9c;--accent:#22c55e;--blue:#2563eb;--name:#a9c4f0;--red:#7f1d1d;--bd:#243040}
 @media (prefers-color-scheme:light){:root{--bg:#eef1f5;--panel:#fff;--row:#fff;--row2:#e6eaf0;--fg:#16202e;--mut:#5b6b7c;--accent:#16a34a;--name:#2b4c85;--red:#dc2626;--bd:#d7dee7}}"""
 
+# base rules byte-identical in both pages (filled into __BASE__) — only these three;
+# header/h1/.nm deliberately diverge between the pages and stay per-page.
+_BASE = """*{box-sizing:border-box}
+body{margin:0;font:16px ui-monospace,SFMono-Regular,Menlo,monospace;
+background:var(--bg);color:var(--fg)}
+ul{list-style:none;margin:0;padding:6px 10px 48px}"""
+
 
 
 PAGE = """<!doctype html>
@@ -28,9 +41,7 @@ PAGE = """<!doctype html>
 <title>RC Launcher</title>
 <style>
 __THEME__
-*{box-sizing:border-box}
-body{margin:0;font:16px ui-monospace,SFMono-Regular,Menlo,monospace;
-background:var(--bg);color:var(--fg)}
+__BASE__
 header{position:sticky;top:0;background:var(--bg);padding:14px 16px 8px;
 border-bottom:1px solid var(--bd);z-index:2}
 .htop{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 10px}
@@ -57,7 +68,6 @@ cursor:pointer;-webkit-tap-highlight-color:transparent}
 .hint{color:var(--mut);font-size:11px;margin:5px 2px 0;opacity:.7}
 .sect{color:var(--mut);font-size:11px;letter-spacing:.6px;text-transform:uppercase;
 margin:14px 16px 4px}
-ul{list-style:none;margin:0;padding:6px 10px 48px}
 li{display:flex;align-items:center;gap:12px;padding:14px;margin:6px 0;
 border-radius:11px;background:var(--row);cursor:pointer;
 -webkit-tap-highlight-color:transparent}
@@ -253,9 +263,7 @@ FILES_PAGE = """<!doctype html>
 <title>rc-share</title>
 <style>
 __THEME__
-*{box-sizing:border-box}
-body{margin:0;font:16px ui-monospace,SFMono-Regular,Menlo,monospace;
-background:var(--bg);color:var(--fg)}
+__BASE__
 header{position:sticky;top:0;background:var(--bg);padding:14px 16px 10px;
 border-bottom:1px solid var(--bd);z-index:2}
 h1{margin:0 0 8px;font-size:13px;letter-spacing:.4px;color:var(--mut);
@@ -274,7 +282,6 @@ font-size:12px;color:var(--mut);background:var(--row);cursor:pointer;
 -webkit-tap-highlight-color:transparent}
 .sortbtn:active{background:var(--row2)}
 .sortbtn.on{color:var(--fg);border-color:var(--blue)}
-ul{list-style:none;margin:0;padding:6px 10px 48px}
 li{border-radius:11px;background:var(--row);margin:6px 0}
 li a{display:flex;align-items:center;gap:12px;padding:14px;color:var(--fg);
 text-decoration:none;-webkit-tap-highlight-color:transparent}
@@ -296,7 +303,7 @@ li.empty{background:none;color:var(--mut);text-align:center;padding:30px}
 var REL=__REL__,up=document.getElementById('up');
 function hum(n){if(n<1024)return n+' B';var u=['KB','MB','GB','TB'],i=-1;do{n/=1024;i++;}while(n>=1024&&i<3);return n.toFixed(1)+' '+u[i];}
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
-var MIN=1<<20,MAX=256<<20;
+__UPLOAD__
 function putSlice(url,fl,off,end,total,rid){return new Promise(function(res){
 var x=new XMLHttpRequest();x.open('PUT',url);
 x.setRequestHeader('X-Rc-Offset',off);x.setRequestHeader('X-Rc-Total',total);x.setRequestHeader('X-Rc-Id',rid);
@@ -304,20 +311,24 @@ x.upload.onprogress=function(e){up.textContent=fl.name+' '+Math.floor((off+e.loa
 x.onload=function(){res(x.status===200);};x.onerror=function(){res(false);};x.onabort=function(){res(false);};
 x.send(fl.slice(off,end));});}
 async function uploadFile(fl){
-var url='/files'+REL+'/'+encodeURIComponent(fl.name),total=fl.size,off=0,stalls=0,chunk=16<<20;
+var url='/files'+REL+'/'+encodeURIComponent(fl.name),total=fl.size;
 var rid=fl.size+'-'+fl.lastModified,idh={'X-Rc-Id':rid};
-try{var h=await fetch(url,{method:'HEAD',headers:idh});off=parseInt(h.headers.get('X-Rc-Have')||'0',10)||0;}catch(e){}
-while(off<total){
-var end=Math.min(off+chunk,total);
-if(await putSlice(url,fl,off,end,total,rid)){off=end;stalls=0;chunk=Math.min(chunk*2,MAX);continue;}
-chunk=Math.max(Math.floor(chunk/2),MIN);
-var got=off;try{var h2=await fetch(url,{method:'HEAD',headers:idh});got=parseInt(h2.headers.get('X-Rc-Have')||'0',10)||off;}catch(e){}
-if(got>off){off=got;stalls=0;}else{if(++stalls>=8){up.textContent='upload failed';return false;}up.textContent='dropped \\u2014 chunk '+hum(chunk)+'\\u2026';await sleep(1500);}}
-return true;}
+async function probe(){
+try{var h=await fetch(url,{method:'HEAD',headers:idh});
+if(!h.ok)return -1;
+return parseInt(h.headers.get('X-Rc-Have')||'0',10)||0;}catch(e){return -1;}}
+function send(off,end){return putSlice(url,fl,off,end,total,rid);}
+var r=await resumeUpload(total,probe,send,
+{onRetry:async function(){up.textContent=fl.name+' dropped \\u2014 retrying\\u2026';await sleep(1500);}});
+if(!r.ok)up.textContent='\\u2717 '+fl.name+' failed';
+return r.ok;}
 document.getElementById('f').addEventListener('change',async function(e){
-var fs=e.target.files;if(!fs.length)return;
-for(var i=0;i<fs.length;i++){await uploadFile(fs[i]);}
-location.reload();});
+var fs=[].slice.call(e.target.files);if(!fs.length)return;
+var ok=0,bad=0;
+for(var i=0;i<fs.length;i++){if(await uploadFile(fs[i]))ok++;else bad++;}
+if(!bad){location.reload();return;}
+e.target.value='';
+up.textContent=ok+' uploaded, '+bad+' failed \\u2014 pull to refresh';});
 document.querySelectorAll('li:not(.dir):not(.empty)').forEach(function(li){
 var a=li.querySelector('a');if(!a)return;var lp=false,t;
 function start(){lp=false;t=setTimeout(function(){lp=true;del(a);},550);}
@@ -338,8 +349,8 @@ var s=getSort(),lis=[].slice.call(UL.querySelectorAll('li[data-n]'));
 lis.sort(function(a,b){
 var dd=(+b.dataset.d)-(+a.dataset.d);if(dd)return dd;  // directories always on top
 var c=s.k==='n'?a.dataset.n.localeCompare(b.dataset.n):(+a.dataset[s.k])-(+b.dataset[s.k]);
-if(!c&&s.k!=='n')c=a.dataset.n.localeCompare(b.dataset.n);  // tie-break by name
-return c*s.d;});
+if(c)return c*s.d;
+return a.dataset.n.localeCompare(b.dataset.n);});  // tie-break by name, always A-to-Z
 lis.forEach(function(li){UL.appendChild(li);});
 document.querySelectorAll('.sortbtn').forEach(function(b){var on=b.dataset.k===s.k;
 b.classList.toggle('on',on);b.textContent=b.dataset.lbl+(on?(s.d>0?' \\u2191':' \\u2193'):'');});}
@@ -352,5 +363,10 @@ __PTR__
 </script>
 </body></html>"""
 
-PAGE = PAGE.replace("__THEME__", _THEME).replace("__PTR__", _PTR)
-FILES_PAGE = FILES_PAGE.replace("__THEME__", _THEME).replace("__PTR__", _PTR)
+PAGE = PAGE.replace("__THEME__", _THEME).replace("__BASE__", _BASE).replace("__PTR__", _PTR)
+FILES_PAGE = (
+    FILES_PAGE.replace("__THEME__", _THEME)
+    .replace("__BASE__", _BASE)
+    .replace("__UPLOAD__", _UPLOAD)
+    .replace("__PTR__", _PTR)
+)
