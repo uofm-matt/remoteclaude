@@ -56,8 +56,13 @@ class HookTest(unittest.TestCase):
         f = self.tmp / "s1.json"
         self.assertEqual(json.loads(f.read_text())["state"], "working")
         self._hook({"hook_event_name": "Notification", "session_id": "s1",
-                    "cwd": "/tmp/proj", "project": "proj"})
-        self.assertEqual(json.loads(f.read_text())["state"], "waiting")  # event -> state map
+                    "cwd": "/tmp/proj", "project": "proj",
+                    "message": "Claude needs your permission to use Bash"})
+        self.assertEqual(json.loads(f.read_text())["state"], "waiting")  # blocked turn -> waiting
+        self._hook({"hook_event_name": "Notification", "session_id": "s1",
+                    "cwd": "/tmp/proj", "project": "proj",
+                    "message": "Claude is waiting for your input"})
+        self.assertEqual(json.loads(f.read_text())["state"], "idle")  # idle ping is NOT waiting
         self._hook({"hook_event_name": "SessionEnd", "session_id": "s1"})
         self.assertFalse(f.exists())  # SessionEnd removes the file
 

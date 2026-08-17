@@ -28,9 +28,18 @@ def main() -> None:
         f.unlink(missing_ok=True)
         return
 
+    state = STATE.get(event, "working")
+    # Notification covers two very different things: a BLOCKED turn (permission
+    # request, a question) and the mere "Claude is waiting for your input" idle ping
+    # after a turn ends. Under bypassPermissions the idle ping is nearly the only one
+    # that fires, so it painted every finished session as amber "waiting". Idle ping
+    # -> idle; anything else stays waiting.
+    if event == "Notification" and "waiting for your input" in payload.get("message", "").lower():
+        state = "idle"
+
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps({
-        "state": STATE.get(event, "working"),
+        "state": state,
         "project": os.environ.get("RC_PROJECT", ""),
         "cwd": payload.get("cwd") or os.getcwd(),
         "session_id": sid,

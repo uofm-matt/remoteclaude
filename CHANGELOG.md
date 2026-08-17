@@ -4,6 +4,11 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-16
 
+- The idle "Claude is waiting for your input" notification no longer paints a session
+  amber "waiting" — under bypassPermissions it is nearly the only Notification that
+  fires, so every finished session (often just showing a suggested next prompt) looked
+  blocked. Idle ping -> idle; permission/question notifications still read waiting.
+
 - Headless launches no longer hang invisibly at interactive prompts: a huge thread now
   makes claude ask "resume from summary or full?" before it registers with the relay, so
   a phone tap read "launched" while the session sat at a prompt nobody could see (hit
