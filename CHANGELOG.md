@@ -4,6 +4,17 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-17
 
+- Readability pass, no behavior change: one `_tmux()` wrapper now carries the twelve
+  captured tmux control calls, so `capture_output=True` stopped outweighing the commands
+  in `_spawn`/`stop`/`launch` (`new-session` stays raw — it is the one call whose stderr
+  is meant to reach the launcher log); `path[len("/files"):]` became `removeprefix` at
+  four sites, with `_files` binding it once instead of recomputing it; `running()` dropped
+  its magic `line[3:]`; and `EVENT_STATE` moved up beside `RANK` in rc_state so the two
+  vocabulary tables can be diffed by eye. Polish pass on top: `_upload`'s folder guard
+  binds `os.path.dirname` once (walrus), and `RANK`/`EVENT_STATE` are `MappingProxyType`
+  now — the shared state vocabulary can no longer be mutated across module boundaries,
+  which is the drift rc_state exists to prevent, as a runtime property instead of a
+  convention. 105/105 tests unchanged throughout.
 - Evening-audit Now trio: pinned the kill-scope cwd boundary (a bare-startswith mutant
   survived while ~/projects holds live sibling-prefix pairs the mutant would cross-kill;
   panel-confirmed High) and the lookalike-binary comm check; pinned the ≥400 log's token

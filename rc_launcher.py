@@ -181,15 +181,20 @@ def git_states(projs: list[str] | None = None) -> dict[str, dict]:
         return {p: s for p, s in zip(projs, ex.map(_git_state_cached, projs), strict=True) if s}
 
 
+def _tmux(*args: str) -> subprocess.CompletedProcess[str]:
+    """A tmux control call with its chatter captured, so it stays out of the audit log.
+    No OSError guard, unlike _run: a missing tmux must surface on the launch/stop paths;
+    running() catches its own FileNotFoundError because status dots are non-essential."""
+    return subprocess.run([TMUX, *args], capture_output=True, text=True)
+
+
 def running() -> set[str]:
     try:
-        out = subprocess.run(
-            [TMUX, "list-sessions", "-F", "#{session_name}"],
-            capture_output=True, text=True,
-        ).stdout
+        out = _tmux("list-sessions", "-F", "#{session_name}").stdout
     except FileNotFoundError:  # tmux not installed yet; status is non-essential
         return set()
-    return {line[3:] for line in out.splitlines() if line.startswith("rc-")}
+    return {line.removeprefix("rc-") for line in out.splitlines()
+            if line.startswith("rc-")}
 
 
 def session_states() -> dict[str, str]:
@@ -205,8 +210,7 @@ def session_states() -> dict[str, str]:
 
 def death_reason(sess: str) -> str:
     """Why a just-launched RC session died, read from its dead pane."""
-    out = subprocess.run([TMUX, "capture-pane", "-t", sess, "-p"],
-                         capture_output=True, text=True).stdout
+    out = _tmux("capture-pane", "-t", sess, "-p").stdout
     last = next((s for ln in reversed(out.splitlines())
                  if (s := ln.strip()) and not s.startswith("Pane is dead")), "")
     low = last.lower()
@@ -423,11 +427,10 @@ def _settle_prompt(sess: str, proj: str) -> str:
     9h/833k-token thread). Returns '' when there is no prompt or it was answered;
     a death reason for an UNKNOWN confirm-style prompt (fail loudly, never
     phantom-succeed)."""
-    pane = subprocess.run([TMUX, "capture-pane", "-t", sess, "-p"],
-                          capture_output=True, text=True).stdout
+    pane = _tmux("capture-pane", "-t", sess, "-p").stdout
     for sentinel, (keys, note) in _PROMPT_ANSWERS.items():
         if sentinel in pane:
-            subprocess.run([TMUX, "send-keys", "-t", sess, *keys], capture_output=True)
+            _tmux("send-keys", "-t", sess, *keys)
             log_event("launch", proj, note)
             return ""
     if "Enter to confirm" in pane:
@@ -447,27 +450,23 @@ def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
          "-c", os.path.join(PARENT, proj), " ".join(cmd)],
         check=False,
     )
-    subprocess.run([TMUX, "set-option", "-t", sess, "remain-on-exit", "on"],
-                   capture_output=True)
+    _tmux("set-option", "-t", sess, "remain-on-exit", "on")
     time.sleep(3)
-    dead = subprocess.run([TMUX, "list-panes", "-t", sess, "-F", "#{pane_dead}"],
-                          capture_output=True, text=True).stdout.strip()
+    dead = _tmux("list-panes", "-t", sess, "-F", "#{pane_dead}").stdout.strip()
     if dead != "0":
         reason = death_reason(sess)
-        subprocess.run([TMUX, "kill-session", "-t", sess], capture_output=True)
+        _tmux("kill-session", "-t", sess)
         return reason
     if reason := _settle_prompt(sess, proj):
-        subprocess.run([TMUX, "kill-session", "-t", sess], capture_output=True)
+        _tmux("kill-session", "-t", sess)
         return reason
-    subprocess.run([TMUX, "set-option", "-t", sess, "remain-on-exit", "off"],
-                   capture_output=True)
+    _tmux("set-option", "-t", sess, "remain-on-exit", "off")
     return ""
 
 
 def launch(proj: str) -> tuple[str, str | None]:
     sess = f"rc-{proj}"
-    if subprocess.run([TMUX, "has-session", "-t", sess],
-                      capture_output=True).returncode == 0:
+    if _tmux("has-session", "-t", sess).returncode == 0:
         return "already", None
     ensure_trusted(proj)
     if snap := snapshot(proj):
@@ -518,9 +517,9 @@ def stop(proj: str) -> tuple[str, str | None]:
     # dropping off the network — so the app keeps showing the session
     # "connected" until the relay's inactivity timeout (~10 min) evicts it.
     # Give claude a moment to disconnect, then hard-kill the session as fallback.
-    subprocess.run([TMUX, "send-keys", "-t", sess, "C-c"], capture_output=True)
+    _tmux("send-keys", "-t", sess, "C-c")
     time.sleep(2)
-    subprocess.run([TMUX, "kill-session", "-t", sess], capture_output=True)
+    _tmux("kill-session", "-t", sess)
     return "stopped", None
 
 
@@ -747,7 +746,8 @@ class Handler(BaseHTTPRequestHandler):
         """Read-only browse/download under SHARE, behind the same token gate.
         share_target() resolves '..' and symlink escapes away, so this can only
         reach files inside SHARE (never ~/projects or $HOME)."""
-        target = share_target(path[len("/files"):])
+        rel = path.removeprefix("/files")
+        target = share_target(rel)
         if target is None:
             return self._send(404, b"not found")
         if os.path.isfile(target):
@@ -755,7 +755,7 @@ class Handler(BaseHTTPRequestHandler):
         if os.path.isdir(target) or target == SHARE:
             # set the cookie here too: loading /files directly (not via /) must still
             # authenticate the cookie-based upload/HEAD/download/delete requests it fires.
-            return self._send(200, share_page(target, path[len("/files"):]), set_cookie=True)
+            return self._send(200, share_page(target, rel), set_cookie=True)
         return self._send(404, b"not found")
 
     def _stream_file(self, target: str):
@@ -775,7 +775,7 @@ class Handler(BaseHTTPRequestHandler):
         The .rcpart temp is keyed by the client's X-Rc-Id, so a stale partial left from a
         different file of the same name resolves to a *different* temp — the resume starts
         fresh instead of merging new bytes onto old ones and corrupting the result."""
-        target = share_target(path[len("/files"):])
+        target = share_target(path.removeprefix("/files"))
         if target is None or target == SHARE or os.path.isdir(target):
             return None, ""
         # sha1 tags the .rcpart temp by X-Rc-Id — a filename key, not a security digest, so
@@ -804,7 +804,7 @@ class Handler(BaseHTTPRequestHandler):
         target, tmp = self._part(path, self.headers.get("X-Rc-Id", ""))
         if target is None:
             return self._send(403, b'{"error":"bad target"}', "application/json", close=True)
-        if not within_share(os.path.dirname(target)) or not os.path.isdir(os.path.dirname(target)):
+        if not within_share(folder := os.path.dirname(target)) or not os.path.isdir(folder):
             return self._send(404, b'{"error":"no such folder"}', "application/json", close=True)
         length = self.headers.get("Content-Length")
         if length is None or not length.isdigit():
@@ -849,7 +849,7 @@ class Handler(BaseHTTPRequestHandler):
     def _delete(self, path: str):
         """Delete a file inside SHARE. Same confinement as read/write; only regular
         files (never the root, never a directory)."""
-        target = share_target(path[len("/files"):])
+        target = share_target(path.removeprefix("/files"))
         if target is None or target == SHARE or not os.path.isfile(target):
             return self._send(403, b'{"error":"bad target"}', "application/json")
         os.unlink(target)

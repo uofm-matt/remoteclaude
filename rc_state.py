@@ -10,12 +10,22 @@ import json
 import os
 import time
 from pathlib import Path
+from types import MappingProxyType
 
 STATE_DIR = Path(os.environ.get("RC_STATE_DIR", Path.home() / ".cache" / "rc-state"))
 STATE_TTL = float(os.environ.get("RC_STATE_TTL", "3600"))
 
 # turn state -> priority; these keys are the entire state vocabulary
-RANK = {"working": 3, "waiting": 2, "idle": 1}
+RANK = MappingProxyType({"working": 3, "waiting": 2, "idle": 1})
+
+# Claude Code hook event -> turn state (every value must be a RANK key)
+EVENT_STATE = MappingProxyType({
+    "UserPromptSubmit": "working",
+    "Notification": "waiting",
+    "Stop": "idle",
+    "SubagentStop": "idle",
+    "SessionStart": "idle",
+})
 
 
 def valid_states(state_dir: Path, now: float | None = None) -> list[dict]:
@@ -35,12 +45,3 @@ def valid_states(state_dir: Path, now: float | None = None) -> list[dict]:
         if d.get("state") in RANK and now - d.get("ts", 0) <= STATE_TTL:
             out.append(d)
     return out
-
-# Claude Code hook event -> turn state (every value must be a RANK key)
-EVENT_STATE = {
-    "UserPromptSubmit": "working",
-    "Notification": "waiting",
-    "Stop": "idle",
-    "SubagentStop": "idle",
-    "SessionStart": "idle",
-}
