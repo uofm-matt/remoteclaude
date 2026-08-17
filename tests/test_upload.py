@@ -406,6 +406,33 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(json.loads(self.get("/launch?proj=realp&json=1")[1])["status"], "launched")
         self.assertEqual(json.loads(self.get("/stop?proj=realp&json=1")[1])["status"], "stopped")
 
+    def test_stop_desk_route_sigterms_desk_session(self):
+        # The X on a desk-badged row: /stop?desk=1 must take the desk_stop branch —
+        # SIGTERM the desk claude, never the tmux C-c/kill-session path (deleting the
+        # route conditional would fall through to stop() and phantom-"stop" nothing).
+        os.makedirs(os.path.join(rc_launcher.PARENT, "deskp"))
+        root = os.path.join(rc_launcher.PARENT, "deskp")
+        killed, calls = [], []
+
+        def kill(pid, sig):
+            killed.append((pid, sig))
+            if sig == 0:
+                raise ProcessLookupError  # SIGTERM worked; takeover needn't escalate
+        rc_launcher.os.kill = kill
+        rc_launcher.subprocess.run = lambda cmd, **kw: (calls.append(cmd), self._resp(cmd))[1]
+        self.responses = {
+            "pgrep": proc(stdout="321\n"),
+            "comm=": proc(stdout="claude\n"),
+            "command=": proc(stdout="claude --continue\n"),
+            "-Fn": proc(stdout=f"n{root}\n"),
+        }
+        status, body = self.get("/stop?proj=deskp&desk=1&json=1")
+        self.assertEqual(json.loads(body)["status"], "stopped")
+        self.assertIn((321, rc_launcher.signal.SIGTERM), killed)   # graceful desk close
+        self.assertNotIn((321, rc_launcher.signal.SIGKILL), killed)
+        joined = [" ".join(map(str, c)) for c in calls]
+        self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
+
     def test_unknown_route_404(self):
         self.assertEqual(self.get("/nonexistent")[0], 404)
 

@@ -144,6 +144,25 @@ class OrchestrationTest(unittest.TestCase):
         self.assertEqual(rc_launcher.takeover("proj"), [111])
         self.assertIn((111, rc_launcher.signal.SIGTERM), self.killed)
 
+    def test_has_desk_thread_discrimination_and_cap(self):
+        # The fork deciding every launch: sdk-cli (relay-only mirror) must not count,
+        # cli must, and only within the first 256KiB — the cap is the 525MB-slurp guard.
+        slug = rc_launcher.re.sub(r"[^A-Za-z0-9]", "-",
+                                  os.path.join(rc_launcher.PARENT, "proj"))
+        d = rc_launcher.CLAUDE_PROJECTS / slug
+        d.mkdir(parents=True)
+        f = d / "s.jsonl"
+        f.write_text('{"entrypoint":"sdk-cli","type":"user"}\n')
+        self.assertFalse(rc_launcher.has_desk_thread("proj"))  # phone-born mirror: not resumable
+        pad = '{"type":"pad","d":"' + "z" * 100 + '"}\n'
+        n_within = 200_000 // len(pad)          # marker lands ~200KB in — inside the cap
+        n_beyond = 262_144 // len(pad) + 5      # pad alone already exceeds the cap
+        f.write_text(pad * n_within + '{"entrypoint":"cli"}\n' + pad * 500)
+        self.assertTrue(rc_launcher.has_desk_thread("proj"))   # cli within 256KiB of a big file
+        f.write_text(pad * n_beyond + '{"entrypoint":"cli"}\n')
+        self.assertFalse(rc_launcher.has_desk_thread("proj"))  # cli only AFTER the cap: unseen,
+        # which is the point — reading past 262144 would mean full-file slurps per tap again
+
     def test_desk_stop_graceful_and_clears_cache(self):
         rc_launcher._desk_cache = (9e18, ["proj"])  # a warm cache the stop must invalidate
         root = os.path.join(rc_launcher.PARENT, "proj")
