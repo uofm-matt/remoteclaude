@@ -63,6 +63,12 @@ class HookTest(unittest.TestCase):
                     "cwd": "/tmp/proj", "project": "proj",
                     "message": "Claude is waiting for your input"})
         self.assertEqual(json.loads(f.read_text())["state"], "idle")  # idle ping is NOT waiting
+        for ev in ("Stop", "SubagentStop", "SessionStart"):
+            self._hook({"hook_event_name": ev, "session_id": "s1",
+                        "cwd": "/tmp/proj", "project": "proj"})
+            # each must map to a real RANK state — a renamed/typo'd value would drop the
+            # session out of every badge and --list silently (the drift rc_state exists for)
+            self.assertEqual(json.loads(f.read_text())["state"], "idle", ev)
         self._hook({"hook_event_name": "SessionEnd", "session_id": "s1"})
         self.assertFalse(f.exists())  # SessionEnd removes the file
 

@@ -111,13 +111,19 @@ class FunctionTest(unittest.TestCase):
     def test_git_state_timeout_is_none_not_crash(self):
         self._git_repo("repo")
 
+        seen = {}
+
         def boom(*a, **k):  # a hung `git status` hitting the timeout
+            seen.update(k)
             raise subprocess.TimeoutExpired("git", rc_launcher.GIT_STATUS_TIMEOUT)
 
         rc_launcher.subprocess.run = boom  # restored by restore_globals()
         # TimeoutExpired is NOT an OSError; if the guard is narrowed to `except OSError:` this
         # raises through git_states() -> page() and 500s the launcher. It must return None.
         self.assertIsNone(rc_launcher._git_state("repo"))
+        # ...and the knob itself must be REQUESTED: dropping timeout= from the call re-ships
+        # the worker hang while this mock still raises unconditionally.
+        self.assertEqual(seen.get("timeout"), rc_launcher.GIT_STATUS_TIMEOUT)
 
     def test_git_states_maps_only_repos(self):
         self._git_repo("repo")
@@ -125,6 +131,16 @@ class FunctionTest(unittest.TestCase):
         got = rc_launcher.git_states()
         self.assertIn("repo", got)         # a repo -> present with branch/dirty
         self.assertNotIn("plain", got)     # non-repo -> dropped
+
+    def test_git_cache_expires_after_ttl(self):
+        repo = self._git_repo("repo")
+        self.addCleanup(setattr, rc_launcher, "GIT_TTL", rc_launcher.GIT_TTL)
+        rc_launcher.GIT_TTL = 0.0  # every entry expires immediately
+        self.assertFalse(rc_launcher.git_states()["repo"]["d"])
+        Path(repo, "f.txt").write_text("changed")
+        # expiry must force a rescan; freezing the deadline check would pin badges
+        # to launch-time state until a launcher restart
+        self.assertTrue(rc_launcher.git_states()["repo"]["d"])
 
     def test_git_states_serves_stale_from_cache(self):
         repo = self._git_repo("repo")
@@ -228,14 +244,22 @@ class FunctionTest(unittest.TestCase):
 
     # --- page() templating / Server.handle_error ---
 
+    def test_fill_prefix_keys_longest_first(self):
+        # A key that is a strict prefix of another: insertion order would match __A__
+        # inside __A__B__ first and mangle it to "shortB__" — the longest-first sort
+        # is what makes the mapping order-independent.
+        out = rc_launcher._fill("__A__B__ + __A__", {"__A__": "short", "__A__B__": "long"})
+        self.assertEqual(out, b"long + short")
+
     def test_page_placeholder_named_project_not_reinterpreted(self):
         self._proj("__LOGIN__")  # a project dir named like a placeholder — NAME_RE permits it
-        for fn in ("login_status", "running", "session_states", "git_states"):
+        for fn in ("login_status", "running", "session_states", "git_states", "desk_projects"):
             self.addCleanup(setattr, rc_launcher, fn, getattr(rc_launcher, fn))
         rc_launcher.login_status = lambda: "ok"
         rc_launcher.running = lambda: set()
         rc_launcher.session_states = lambda: {}
         rc_launcher.git_states = lambda projs=None: {}
+        rc_launcher.desk_projects = lambda: []  # else this unit test forks real pgrep/ps
         out = rc_launcher.page().decode()
         self.assertIn('["__LOGIN__"]', out)  # the name survives as data in PROJECTS...
         self.assertIn('LOGIN="ok"', out)     # ...and the real __LOGIN__ slot filled, not clobbered

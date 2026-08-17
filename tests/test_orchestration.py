@@ -163,6 +163,16 @@ class OrchestrationTest(unittest.TestCase):
         self.assertFalse(rc_launcher.has_desk_thread("proj"))  # cli only AFTER the cap: unseen,
         # which is the point — reading past 262144 would mean full-file slurps per tap again
 
+    def test_desk_projects_ttl_expiry_rescans(self):
+        rc_launcher._desk_cache = (0.0, [])
+        self.addCleanup(setattr, rc_launcher, "DESK_TTL", rc_launcher.DESK_TTL)
+        rc_launcher.DESK_TTL = 0.0  # expire immediately: every call must rescan
+        self.responses = {"pgrep": proc(stdout="")}
+        rc_launcher.desk_projects()
+        rc_launcher.desk_projects()
+        pgreps = len([c for c in self.calls if "pgrep" in " ".join(map(str, c))])
+        self.assertEqual(pgreps, 2)  # a frozen deadline check would serve the stale cache
+
     def test_desk_stop_graceful_and_clears_cache(self):
         rc_launcher._desk_cache = (9e18, ["proj"])  # a warm cache the stop must invalidate
         root = os.path.join(rc_launcher.PARENT, "proj")
@@ -252,7 +262,10 @@ class OrchestrationTest(unittest.TestCase):
         path_arg = next(a for a in newsession if str(a).startswith("PATH="))
         self.assertEqual(newsession[newsession.index(path_arg) - 1], "-e")
         local_bin = os.path.expanduser("~/.local/bin")
-        self.assertTrue(path_arg.startswith(f"PATH={local_bin}:"), path_arg)
+        # exact value: prefix AND tail — an empty tail (dropping the os.environ part)
+        # would strip /usr/bin:/bin from every phone session and still pass a
+        # startswith-only check
+        self.assertEqual(path_arg, f"PATH={local_bin}:{os.environ['PATH']}")
 
     def test_launch_auto_answers_resume_prompt_with_full(self):
         # A huge thread makes claude ask summary-vs-full before it registers with the

@@ -90,6 +90,24 @@ test('mid-transfer probe failure keeps the last trusted offset', async () => {
   assert.deepEqual(sent, [[0, 100], [100, 200], [100, 200], [200, 300]]);
 });
 
+test('mid-transfer unknown probes terminate at the stall cap', async () => {
+  // HEAD dies after the start AND PUTs keep failing: the unknown-probe branch must
+  // count stalls too. Deleting its stalls++ makes this loop probe->send->retry
+  // forever — onRetry throws before a hang can escape into the runner.
+  let first = true;
+  let retries = 0;
+  const sent = [];
+  const r = await resumeUpload(
+    300,
+    async () => { if (first) { first = false; return 0; } return -1; },
+    async (off, end) => { sent.push([off, end]); return false; },
+    { chunk: 100, minChunk: 100, maxChunk: 100, maxStalls: 3,
+      onRetry: async () => { if (++retries > 10) throw new Error('spinning: unknown-probe stalls not counted'); } },
+  );
+  assert.deepEqual(r, { ok: false, reason: 'stalled' });
+  assert.ok(sent.every(([off]) => off === 0));  // never a guessed offset while probes fail
+});
+
 test('gives up after consecutive no-progress rounds', async () => {
   let probes = 0;
   const r = await resumeUpload(

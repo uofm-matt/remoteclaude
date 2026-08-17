@@ -28,6 +28,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http.cookies import SimpleCookie
@@ -279,23 +280,29 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def desktop_sessions(proj: str) -> list[int]:
-    """PIDs of live *desktop* claude sessions (VS Code or terminal) whose cwd is
-    inside proj — claude processes rooted there that aren't a remote-control
-    server. These are the clients a resuming remote session would collide with.
-    Scoped by cwd, so sessions for any other project are never touched."""
-    root = os.path.join(PARENT, proj)
-    pids = []
+def _desk_claude_pids() -> Iterator[tuple[int, str]]:
+    """(pid, cwd) of every live plain (desk) claude — the ONE definition of "desk
+    claude" (a claude-named process that is not a remote-control server), shared by
+    the badge scan and the kill paths so their scopes cannot drift apart: a filter
+    fixed in one copy but not the other would mean a badge advertising sessions the
+    ✕/takeover can't close, or a takeover killing sessions the badge never showed."""
     for pid in _run([PGREP, "-f", "claude"]).split():
         comm = _run([PS, "-o", "comm=", "-p", pid]).strip()
         if os.path.basename(comm) != "claude":  # skip the launcher, grep, etc.
             continue
         if "remote-control" in _run([PS, "-o", "command=", "-p", pid]):
-            continue  # an RC server, not a desktop client
-        cwd = _pid_cwd(pid)
-        if cwd and (cwd == root or cwd.startswith(root + os.sep)):
-            pids.append(int(pid))
-    return pids
+            continue  # an RC server — the launcher's own tmux dot shows it
+        if cwd := _pid_cwd(pid):
+            yield int(pid), cwd
+
+
+def desktop_sessions(proj: str) -> list[int]:
+    """PIDs of live desk claude sessions whose cwd is inside proj — the clients a
+    resuming remote session would collide with. Scoped by cwd, so sessions for any
+    other project are never touched."""
+    root = os.path.join(PARENT, proj)
+    return [pid for pid, cwd in _desk_claude_pids()
+            if cwd == root or cwd.startswith(root + os.sep)]
 
 
 _desk_lock = threading.Lock()
@@ -303,24 +310,22 @@ _desk_cache: tuple[float, list[str]] = (0.0, [])
 
 
 def _desk_scan() -> list[str]:
-    """Projects with a live plain (desk) claude rooted inside them. Current Claude Code
+    """Projects with a live desk claude rooted inside them. Current Claude Code
     auto-pairs interactive sessions with the phone app, so these are phone-drivable —
-    but invisible to the launcher's tmux-based dots. Same probe chain as
-    desktop_sessions(), across all projects at once. (bridge-pointer.json was rejected
-    as the signal: live desk sessions don't reliably write one, and stale ones point at
-    dead pids.)"""
-    out: set[str] = set()
+    but invisible to the launcher's tmux-based dots. (bridge-pointer.json was rejected
+    as the signal: live desk sessions don't reliably write one, and stale ones point
+    at dead pids.)"""
     root = PARENT + os.sep
-    for pid in _run([PGREP, "-f", "claude"]).split():
-        comm = _run([PS, "-o", "comm=", "-p", pid]).strip()
-        if os.path.basename(comm) != "claude":
-            continue
-        if "remote-control" in _run([PS, "-o", "command=", "-p", pid]):
-            continue  # an RC server — the tmux dot already shows it
-        cwd = _pid_cwd(pid)
-        if cwd and cwd.startswith(root):
-            out.add(cwd[len(root):].split(os.sep)[0])
-    return sorted(out)
+    return sorted({cwd.removeprefix(root).split(os.sep)[0]
+                   for _, cwd in _desk_claude_pids() if cwd.startswith(root)})
+
+
+def _desk_invalidate() -> None:
+    """Drop the scan cache so the badge reflects a just-changed reality on the next
+    poll (desk_stop calls this after killing a session)."""
+    global _desk_cache
+    with _desk_lock:
+        _desk_cache = (0.0, [])
 
 
 def desk_projects() -> list[str]:
@@ -402,6 +407,35 @@ def launch_cmd(proj: str) -> tuple[list[str], bool]:
     return fresh_cmd(proj), False
 
 
+# Interactive-prompt policy: pane sentinel -> (keys to answer with, audit-log note).
+# This is PRODUCT policy (the owner's standing "never compact, always full resume"
+# choice), kept as data so the next claude prompt is a table row, not a _spawn rewrite.
+_PROMPT_ANSWERS = {
+    "Resume from summary": (["Down", "Enter"], "auto-confirmed FULL resume"),
+}
+
+
+def _settle_prompt(sess: str, proj: str) -> str:
+    """Detect and answer a known interactive prompt in the freshly-spawned session.
+    Claude can survive the liveness window stuck at a prompt the phone never sees —
+    it then never registers with the relay, so the tap would read "launched" while
+    the session is absent from the app (hit live: the resume-cost prompt on a
+    9h/833k-token thread). Returns '' when there is no prompt or it was answered;
+    a death reason for an UNKNOWN confirm-style prompt (fail loudly, never
+    phantom-succeed)."""
+    pane = subprocess.run([TMUX, "capture-pane", "-t", sess, "-p"],
+                          capture_output=True, text=True).stdout
+    for sentinel, (keys, note) in _PROMPT_ANSWERS.items():
+        if sentinel in pane:
+            subprocess.run([TMUX, "send-keys", "-t", sess, *keys], capture_output=True)
+            log_event("launch", proj, note)
+            return ""
+    if "Enter to confirm" in pane:
+        first = next((s for ln in pane.splitlines() if (s := ln.strip())), "prompt")
+        return f"stuck at interactive prompt: {first[:60]}"
+    return ""
+
+
 def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
     """Start cmd detached in tmux, rooted in proj. Returns '' if it's still alive
     after the startup window, else the death reason (and kills the session). RC
@@ -422,24 +456,9 @@ def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
         reason = death_reason(sess)
         subprocess.run([TMUX, "kill-session", "-t", sess], capture_output=True)
         return reason
-    # Alive is not enough: claude can survive the window stuck at an interactive
-    # prompt the phone never sees — it then never registers with the relay, so the
-    # tap reads "launched" but the session is absent from the app (hit live: the
-    # resume-cost prompt on a 9h/833k-token thread). Auto-answer the known
-    # resume-cost prompt with "Resume full session as-is" (owner's standing
-    # preference: never compact, always resume — Down moves off the highlighted
-    # summary option); any other confirm-style prompt is a failed launch with the
-    # reason surfaced instead of a phantom success.
-    pane = subprocess.run([TMUX, "capture-pane", "-t", sess, "-p"],
-                          capture_output=True, text=True).stdout
-    if "Resume from summary" in pane:
-        subprocess.run([TMUX, "send-keys", "-t", sess, "Down", "Enter"],
-                       capture_output=True)
-        log_event("launch", proj, "auto-confirmed FULL resume")
-    elif "Enter to confirm" in pane:
-        first = next((ln.strip() for ln in pane.splitlines() if ln.strip()), "prompt")
+    if reason := _settle_prompt(sess, proj):
         subprocess.run([TMUX, "kill-session", "-t", sess], capture_output=True)
-        return f"stuck at interactive prompt: {first[:60]}"
+        return reason
     subprocess.run([TMUX, "set-option", "-t", sess, "remain-on-exit", "off"],
                    capture_output=True)
     return ""
@@ -510,12 +529,10 @@ def desk_stop(proj: str) -> tuple[str, str | None]:
     SIGTERM -> wait -> SIGKILL as takeover, so claude flushes its transcript and
     deregisters from the app pairing — the thread stays resumable afterwards
     (desk `claude` or a launcher tap both pick it up)."""
-    global _desk_cache
     pids = takeover(proj)
     if pids:
         log_event("stopdesk", proj, ",".join(map(str, pids)))
-    with _desk_lock:
-        _desk_cache = (0.0, [])  # drop the scan cache so the badge clears on the next poll
+    _desk_invalidate()
     return ("stopped" if pids else "idle"), None
 
 

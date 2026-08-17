@@ -40,16 +40,30 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Next — target 2026-08-24
 
+> **DONE 2026-08-17** — `_desk_claude_pids()` generator is the single desk-claude
+> definition; `desktop_sessions` filters it, `_desk_scan` groups it (`removeprefix`
+> folded in); `_desk_invalidate()` replaces desk_stop's inline tuple surgery.
+
 - [ ] **Unify the desk-claude probe chain.** rc_launcher.py:282-298 vs 305-323 — two
   definitions of "what counts as a desk claude" (badge scope vs kill scope), three of four
   filter steps verbatim; converged on independently by two finders. One `_desk_claude_pids()`
   generator yielding (pid, cwd); `desktop_sessions` filters, `_desk_scan` groups. Fold in
   `removeprefix` at :322 and a `_desk_invalidate()` next to the cache (desk_stop:517 does
   tuple surgery inline).
+> **DONE 2026-08-17** — `_settle_prompt(sess, proj)` + the `_PROMPT_ANSWERS` table;
+> `_spawn` is back to mechanics (spawn, liveness, cleanup). Behavior-preserved under the
+> two existing prompt tests.
+
 - [ ] **Hoist `_settle_prompt` out of `_spawn`.** rc_launcher.py:405-445 — prompt
   classification/answer is product policy (owner's never-compact preference) embedded in
   process mechanics; two of the last three launcher commits edited exactly that block. Table
   of prompt→action, single caller, behavior-preserving; existing two prompt tests cover it.
+> **DONE 2026-08-17** — all seven pinned: timeout kwarg asserted on the mock; PATH
+> exact-equality (prefix + tail); JS `stalls++` case (12th node test, onRetry throws
+> before a spin can hang the runner); Stop/SubagentStop/SessionStart walk; `_fill`
+> prefix-pair test; TTL-expiry tests for both caches; `desk_projects` stubbed in the
+> page test and `_desk_cache` added to `_harness._ATTRS`.
+
 - [ ] **Pin the knob batch the mutations walked through.** Each described-green: git timeout
   kwarg never asserted on the mock (tests/test_functions.py:111 vs rc_launcher.py:142); PATH
   tail unpinned (empty-tail mutation green, tests/test_orchestration.py:224); JS mid-transfer

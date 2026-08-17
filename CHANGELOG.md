@@ -4,6 +4,13 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-17
 
+- Audit Next batch: one `_desk_claude_pids()` generator is now the single definition of
+  "desk claude" for both the badge scan and the kill/takeover paths (two verbatim copies
+  could drift scopes apart silently); `_settle_prompt` hoists the interactive-prompt
+  policy out of `_spawn` as a data table; and seven knob-level test pins landed (git
+  timeout requested, PATH tail exact, JS mid-transfer stall cap — the last unguarded
+  spin — hook event trio, `_fill` ordering, TTL expiry on both caches, the real-pgrep
+  unit-test leak stubbed + `_desk_cache` restored per test).
 - Audit paydown (the 2026-08-17 audit's Now batch): pinned `has_desk_thread`'s two
   load-bearing properties (sdk-cli discrimination + the 256KiB read cap — both were
   mutation-deletable with a green suite) and the `/stop?desk=1` route wiring (the desk ✕
