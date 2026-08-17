@@ -235,6 +235,33 @@ class OrchestrationTest(unittest.TestCase):
         local_bin = os.path.expanduser("~/.local/bin")
         self.assertTrue(path_arg.startswith(f"PATH={local_bin}:"), path_arg)
 
+    def test_launch_auto_confirms_summary_resume_prompt(self):
+        # A huge thread makes claude ask summary-vs-full before it registers with the
+        # relay; headless, that prompt must be auto-confirmed or the phone never sees
+        # the session while the launcher claims "launched".
+        rc_launcher.RESUME, rc_launcher.SPAWN = "off", "same-dir"
+        self.responses = {
+            "has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n"),
+            "capture-pane": proc(stdout="Resume from summary (recommended)\nEnter to confirm\n"),
+        }
+        self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
+        self.assertTrue(any("send-keys" in c and "Enter" in c
+                            for c in self._cmds()))  # the prompt was answered
+
+    def test_launch_fails_loudly_on_unknown_prompt(self):
+        # Any OTHER confirm-style prompt is a failed launch with the reason surfaced —
+        # never a phantom "launched" whose session is invisible in the app.
+        rc_launcher.RESUME, rc_launcher.SPAWN = "off", "same-dir"
+        self.responses = {
+            "has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n"),
+            "capture-pane": proc(stdout="Choose a login method\nEnter to confirm · Esc to cancel\n"),
+        }
+        status, reason = rc_launcher.launch("proj")
+        self.assertEqual(status, "failed")
+        self.assertIn("stuck at interactive prompt", reason)
+        self.assertIn("Choose a login method", reason)
+        self.assertTrue(any("kill-session" in c for c in self._cmds()))
+
     def test_launch_dead_pane_reports_reason_and_kills(self):
         rc_launcher.RESUME = "off"
         self.responses = {
