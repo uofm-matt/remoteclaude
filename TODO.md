@@ -1,12 +1,33 @@
 # TODO
 
 Backlog for remoteclaude, ranked by leverage. Dates are targets, not deadlines.
-Grades 2026-08-17 (@55ab16a): architecture B+, code A-, tests B+, process A- (net B+).
+Grades 2026-08-17 evening (@87c58bf, post-paydown; closures mutant-verified): architecture A-, code A-, tests A-, process A- (net A-).
+Grades 2026-08-17 morning (@55ab16a, superseded): arch B+, code A-, tests B+, process A- (net B+).
 Grades 2026-08-08 (@7a530c1, superseded, kept for the trend): arch A-, code A-, tests A-, process B+ (net A-).
 
 When an item is done, **leave it unticked with a `DONE <date>:` note above it** rather than
 deleting it — the original wording records what was wrong, the note records the fix. Verify
 before you schedule from a stale entry: check the claim still holds, then act.
+
+## Now — audit 2026-08-17 evening, target 2026-08-18
+
+- [ ] **The kill-scope sibling-prefix guard is untested.** rc_launcher.py:304-305 — mutating
+  `cwd == root or cwd.startswith(root + os.sep)` to bare `startswith(root)` survives all 104
+  tests, and ~/projects holds live sibling-prefix pairs (alpha/alpha-sub,
+  beta/beta-sub) the mutant would cross-kill. Add to the desktop_sessions fixture: a
+  pid whose cwd is `root + "x"` asserted excluded, and a `claude-helper` comm asserted
+  excluded (the comm equality check is loosenable the same way). (~8 lines.)
+- [ ] **Pin the ≥400 log redaction.** rc_launcher.py:708-711 — reverting
+  `urlparse(self.path).path` to `self.path` keeps all 104 green; the app's uploads carry
+  `?token=`, so that revert re-opens the log leak. 4-line test: fire a 4xx with `?token=`,
+  assert the token absent from the captured log line. The last unpinned leg of the token
+  remediation.
+- [ ] **RUNBOOK still calls the share "read-only by design" — twice.** RUNBOOK.md:158, :176 —
+  upload/delete shipped long ago and the same file documents the upload protocol at :196.
+  A stale by-design sentence instructs deleting the upload path. Rewrite both naming what
+  the design defends (HTTP read+upload, confined; SMB optional), then `git grep -in` the
+  retired wording across every doc. The operator's global CLAUDE.md rc-share note carries
+  the same retired phrasing (his call to sync).
 
 ## Now — target 2026-08-18
 
@@ -72,7 +93,21 @@ before you schedule from a stale entry: check the claim still holds, then act.
   unasserted; TTL expiry untested on both caches; stub `desk_projects` in the page-placeholder
   test (it forks real pgrep mid-unit-run) and add `_desk_cache` to `_harness._ATTRS`.
 
+## Next — audit 2026-08-17 evening, target 2026-08-24
+
+- [ ] **`status_payload()` then the `rc_sessions.py` cut, in that order.** The HOLD is
+  lifted: the orchestration cluster's feature wave is complete (371/962 lines, eight plain
+  Handler-facing calls, made *more* cuttable by `_desk_claude_pids`/`_settle_prompt`).
+  Land one `status_payload()` feeding both `page()` (rc_launcher.py:572) and `/status`
+  (:876) first — it redraws exactly the seam the cut formalizes, and makes git-in-the-poll
+  a one-liner (badges currently freeze between page loads) — then take the Tier-H
+  extraction so the seam moves once. Test migration rides along (~430 lines of
+  test_orchestration reference module functions).
+
 ## Later — audit 2026-08-17, unscheduled
+
+> **RE-RANKED 2026-08-17 evening** — promoted into the Next entry above (sequenced before
+> the rc_sessions.py cut).
 
 - [ ] **One `status_payload()` for page() and /status.** rc_launcher.py:557-565 vs 859-860 —
   the payload is assembled twice; symptom: GITSTATES is page-load-only, so branch/dirty badges
@@ -81,8 +116,18 @@ before you schedule from a stale entry: check the claim still holds, then act.
 - [ ] **Small-pass batch:** drop the dead `json=1` on the `/create` fetch (rc_templates.py:223
   — the route never reads it); `EVENT_STATE[event]` instead of `.get(event, "working")` in
   rc_state_hook.py:31 (unknown event should crash the hook, not paint green); `rows_html`
-  OSError currently renders as "empty" (rc_launcher.py:596 — mislabels permission failures);
-  refresh docs/launcher.png (predates icons/desk badges).
+  OSError currently renders as "empty" (rc_launcher.py:596 — mislabels permission failures;
+  NOTE: tests/test_upload.py:326 currently *pins* the mislabeling — update that assertion in
+  the same commit); refresh docs/launcher.png (predates icons/desk badges).
+- [ ] **Small-pass additions (2026-08-17 evening):** desk-✕ toast honesty — `stopSess`
+  discards `desk_stop`'s `"idle"` status and toasts "closed" for a claude that already
+  exited (rc_templates.py:210, 2 lines); pin the `u.path == "/stop"` half of the desk
+  conditional (a `/launch?desk=1` currently would desk-stop, untested); `create()` double-tap
+  TOCTOU — catch `FileExistsError` → `("exists", None)` (rc_launcher.py:551); RUNBOOK:45
+  pins claude v2.1.169 while :337 verifies against v2.1.195 (state-table drift).
+  Watch-items, fix only if observed live: the desk-badge invalidation race (an in-flight
+  scan can re-cache a killed session for ≤DESK_TTL; self-heals) and `_settle_prompt`'s
+  single capture at t=3s (a prompt rendering later is neither answered nor detected).
 
 ## Now — small, high value (target 2026-08-08)
 
