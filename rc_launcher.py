@@ -425,14 +425,17 @@ def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
     # Alive is not enough: claude can survive the window stuck at an interactive
     # prompt the phone never sees — it then never registers with the relay, so the
     # tap reads "launched" but the session is absent from the app (hit live: the
-    # resume-cost prompt on a 9h/833k-token thread). Auto-confirm the known
-    # summary-resume prompt; any other confirm-style prompt is a failed launch
-    # with the reason surfaced instead of a phantom success.
+    # resume-cost prompt on a 9h/833k-token thread). Auto-answer the known
+    # resume-cost prompt with "Resume full session as-is" (owner's standing
+    # preference: never compact, always resume — Down moves off the highlighted
+    # summary option); any other confirm-style prompt is a failed launch with the
+    # reason surfaced instead of a phantom success.
     pane = subprocess.run([TMUX, "capture-pane", "-t", sess, "-p"],
                           capture_output=True, text=True).stdout
     if "Resume from summary" in pane:
-        subprocess.run([TMUX, "send-keys", "-t", sess, "Enter"], capture_output=True)
-        log_event("launch", proj, "auto-confirmed summary resume")
+        subprocess.run([TMUX, "send-keys", "-t", sess, "Down", "Enter"],
+                       capture_output=True)
+        log_event("launch", proj, "auto-confirmed FULL resume")
     elif "Enter to confirm" in pane:
         first = next((ln.strip() for ln in pane.splitlines() if ln.strip()), "prompt")
         subprocess.run([TMUX, "kill-session", "-t", sess], capture_output=True)

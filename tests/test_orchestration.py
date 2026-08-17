@@ -235,18 +235,19 @@ class OrchestrationTest(unittest.TestCase):
         local_bin = os.path.expanduser("~/.local/bin")
         self.assertTrue(path_arg.startswith(f"PATH={local_bin}:"), path_arg)
 
-    def test_launch_auto_confirms_summary_resume_prompt(self):
+    def test_launch_auto_answers_resume_prompt_with_full(self):
         # A huge thread makes claude ask summary-vs-full before it registers with the
-        # relay; headless, that prompt must be auto-confirmed or the phone never sees
-        # the session while the launcher claims "launched".
+        # relay; headless, that prompt must be answered or the phone never sees the
+        # session. The owner's standing choice is FULL resume (never compact): Down
+        # moves off the highlighted summary option, Enter confirms.
         rc_launcher.RESUME, rc_launcher.SPAWN = "off", "same-dir"
         self.responses = {
             "has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n"),
             "capture-pane": proc(stdout="Resume from summary (recommended)\nEnter to confirm\n"),
         }
         self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
-        self.assertTrue(any("send-keys" in c and "Enter" in c
-                            for c in self._cmds()))  # the prompt was answered
+        answer = next(c for c in self.calls if "send-keys" in " ".join(map(str, c)))
+        self.assertEqual(answer[-2:], ["Down", "Enter"])  # full resume, not the summary default
 
     def test_launch_fails_loudly_on_unknown_prompt(self):
         # Any OTHER confirm-style prompt is a failed launch with the reason surfaced —
