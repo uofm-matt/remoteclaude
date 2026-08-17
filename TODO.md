@@ -1,10 +1,63 @@
 # TODO
 
 Backlog for remoteclaude, ranked by leverage. Dates are targets, not deadlines.
+Grades 2026-08-17 (@55ab16a): architecture B+, code A-, tests B+, process A- (net B+).
+Grades 2026-08-08 (@7a530c1, superseded, kept for the trend): arch A-, code A-, tests A-, process B+ (net A-).
 
 When an item is done, **leave it unticked with a `DONE <date>:` note above it** rather than
 deleting it — the original wording records what was wrong, the note records the fix. Verify
 before you schedule from a stale entry: check the claim still holds, then act.
+
+## Now — target 2026-08-18
+
+- [ ] **`has_desk_thread` has zero direct tests; both load-bearing properties unguarded.**
+  rc_launcher.py:374-388 — loosening the entrypoint regex to `"entrypoint":` (phantom-launch
+  regression returns) or removing the `fh.read(262144)` cap (525MB slurp returns) both leave
+  all 99 tests green. Add the trio in tests/test_orchestration.py: sdk-cli-only transcript →
+  False; cli marker inside first 256KiB of a >256KiB file → True; cli marker after byte
+  262144 → False. (~15 lines; the audit's one High.)
+- [ ] **`/stop?desk=1` route wiring is untested.** rc_launcher.py:881 (coverage-missed) —
+  delete the conditional and the desk ✕ falls through to `stop()`, C-c's a nonexistent tmux
+  session, reports "stopped" while the desk claude lives; suite stays green. One RouteTest
+  case: hit `/stop?proj=X&desk=1`, assert SIGTERM fired and no tmux `C-c`.
+- [ ] **Doc-sync: three token-era claims instruct re-creating the removed leak channel.**
+  RUNBOOK.md:299 ("Token in the LaunchAgent env" under *don't undo these*), README.md:107,
+  android/README.md:51 ("baked-in token") all describe the pre-remediation design; also
+  RUNBOOK.md:17 + README.md:29 still say the subcommand launch form, ✕ semantics lack the
+  desk case, and CHANGELOG has no entries for c206cbc (icons) / d1b9918 (desk ✕). One
+  ~15-line commit; add `rc_templates` to ci.yml:24 `--source` in the same pass.
+
+## Next — target 2026-08-24
+
+- [ ] **Unify the desk-claude probe chain.** rc_launcher.py:282-298 vs 305-323 — two
+  definitions of "what counts as a desk claude" (badge scope vs kill scope), three of four
+  filter steps verbatim; converged on independently by two finders. One `_desk_claude_pids()`
+  generator yielding (pid, cwd); `desktop_sessions` filters, `_desk_scan` groups. Fold in
+  `removeprefix` at :322 and a `_desk_invalidate()` next to the cache (desk_stop:517 does
+  tuple surgery inline).
+- [ ] **Hoist `_settle_prompt` out of `_spawn`.** rc_launcher.py:405-445 — prompt
+  classification/answer is product policy (owner's never-compact preference) embedded in
+  process mechanics; two of the last three launcher commits edited exactly that block. Table
+  of prompt→action, single caller, behavior-preserving; existing two prompt tests cover it.
+- [ ] **Pin the knob batch the mutations walked through.** Each described-green: git timeout
+  kwarg never asserted on the mock (tests/test_functions.py:111 vs rc_launcher.py:142); PATH
+  tail unpinned (empty-tail mutation green, tests/test_orchestration.py:224); JS mid-transfer
+  `stalls++` deletable (rc_upload.js:56 — the one remaining infinite-spin); Stop/SubagentStop/
+  SessionStart never pass through the hook (tests/test_hooks.py); `_fill` longest-first sort
+  unasserted; TTL expiry untested on both caches; stub `desk_projects` in the page-placeholder
+  test (it forks real pgrep mid-unit-run) and add `_desk_cache` to `_harness._ATTRS`.
+
+## Later — audit 2026-08-17, unscheduled
+
+- [ ] **One `status_payload()` for page() and /status.** rc_launcher.py:557-565 vs 859-860 —
+  the payload is assembled twice; symptom: GITSTATES is page-load-only, so branch/dirty badges
+  freeze during exactly the window a remote turn dirties the tree. Unifying makes "git in the
+  poll" a one-line product call (server cache already bounds the cost).
+- [ ] **Small-pass batch:** drop the dead `json=1` on the `/create` fetch (rc_templates.py:223
+  — the route never reads it); `EVENT_STATE[event]` instead of `.get(event, "working")` in
+  rc_state_hook.py:31 (unknown event should crash the hook, not paint green); `rows_html`
+  OSError currently renders as "empty" (rc_launcher.py:596 — mislabels permission failures);
+  refresh docs/launcher.png (predates icons/desk badges).
 
 ## Now — small, high value (target 2026-08-08)
 
@@ -82,6 +135,12 @@ before you schedule from a stale entry: check the claim still holds, then act.
   take it over. Cheap (file reads + `os.kill(pid, 0)`), no process sniffing.
 
 ## Deferred — needs a decision or new tooling
+
+> **RE-RANKED 2026-08-17** — audit verdict: this deferral is *strengthened* (the share side
+> has had zero churn since 7a530c1; you extract where change happens) and is superseded as
+> the right Tier-H cut by `rc_sessions.py` — the orchestration cluster is now 337/945 lines,
+> absorbed all recent growth, and faces the Handler through eight plain function calls. Hold
+> until that cluster stops moving (four commits touched it in two days).
 
 - [ ] Extract the rc-share file server into `rc_files.py`. High-impact: the confinement tests
   inject `SHARE` as a live global, and `js` / `log_event` / `MT` are shared with the launcher.
