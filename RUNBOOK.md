@@ -14,7 +14,10 @@ Tailscale.
 
 - A tiny always-on web server on the Mac (`rc_launcher.py`) shows a searchable
   list of every directory under `~/projects`. Tap one.
-- That fires `claude remote-control --name <project>` **in the project's root**,
+- That launches claude **in the project's root** — `claude --continue
+  --remote-control <project>` when a desk-resumable thread exists, else the fresh
+  flag form `claude --remote-control <project>` (never the `remote-control`
+  subcommand for same-dir: it births relay-only threads nothing can resume) —
   held in a detached `tmux` session so it survives the request returning.
 - The session shows up in the **Claude app → Code** with a green dot. You drive
   it from there. Because it launched in the project root, it loads that project's
@@ -84,9 +87,12 @@ the session is confirmed up; if it can't start, a toast names why (untrusted
 dir, login expired, …) instead of a false "launched". Live projects show a green
 dot in the launcher too, refreshed every 5s from `/status`, so a session that
 dies on its own clears without a manual reload. Tapping a live row again is a
-no-op ("already live"). To close a live session, tap the **✕** on its row and
-confirm — that kills the tmux session and ends its Claude context. Recents float
-to the top (stored in the browser's localStorage).
+no-op ("already live"). Rows also show *where* a project is live: **📱** means
+the launcher runs it (tmux), **🖥** means a plain desk `claude` is live there
+(auto-paired with the app; tapping the row takes it over). The **✕** closes a
+session where it lives: on a 📱 row it SIGINTs and kills the tmux session; on a
+🖥 row it SIGTERMs the desk claude gracefully (transcript flushed, relay
+archived, thread still resumable). Recents float to the top (localStorage).
 
 To start a brand-new project, type a name that matches nothing: a dashed
 **＋ create & start** row appears (or just press Enter). It makes the folder under
@@ -128,8 +134,10 @@ desktop session on any *other* project keeps running. The thread survives the ha
 (the transcript is on disk — that's what the phone resumes), but a desktop session caught
 mid-turn has that turn cut off.
 
-A brand-new project (create-and-start) has no thread to continue: the resume form exits
-1, and the launcher falls back to a normal fresh launch automatically, so nothing breaks.
+A brand-new project (create-and-start) has no thread to continue: the launcher checks
+up front (`has_desk_thread` — is there a desk-resumable transcript?) and goes straight
+to the fresh flag-form launch, so nothing breaks and no doomed resume attempt is paid.
+The exit-1 fallback still exists underneath as a safety net for other startup deaths.
 
 Toggles (set at install time, e.g. `RC_RESUME=off ./install.sh`):
 - `RC_RESUME` — `continue` (default), `fork` (branch a new thread from the last one,
@@ -296,8 +304,12 @@ login, and it's the same lever the stale-ghost note suggests, so skip it remotel
 - **Mac needs no Tailscale** — reachability rides the router's subnet route. This
   removes the "Tailscale app must auto-start at boot on the Mac" failure mode,
   which matters for the hands-off-after-power scenario.
-- **Token in the LaunchAgent env, not the repo** — the secret never lands in
-  version control.
+- **Token in a 0600 file (`~/.config/rc-launcher/token`), nowhere else** — the
+  launcher reads it directly; the plist/systemd unit carry no secret (so
+  `launchctl print` can't leak it), it never lands in version control, and
+  rotation is write-file + kickstart. Do not "helpfully" put it back in the
+  service env or a CI secret — removing it from those channels was a deliberate
+  remediation (see CHANGELOG 2026-08-16).
 - **Remote taps resume the last thread and take over the desk by default** — `claude
   --continue --remote-control` (flag form; the subcommand can't resume, and the flag form
   doesn't take/need `--spawn` for same-dir) reopens the project's most recent thread, and

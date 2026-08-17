@@ -10,16 +10,27 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Now — target 2026-08-18
 
+> **DONE 2026-08-17** — `test_has_desk_thread_discrimination_and_cap`
+> (tests/test_orchestration.py): sdk-cli → False, cli within 256KiB → True, cli after
+> byte 262144 → False. Both formerly-green mutations now fail the suite.
+
 - [ ] **`has_desk_thread` has zero direct tests; both load-bearing properties unguarded.**
   rc_launcher.py:374-388 — loosening the entrypoint regex to `"entrypoint":` (phantom-launch
   regression returns) or removing the `fh.read(262144)` cap (525MB slurp returns) both leave
   all 99 tests green. Add the trio in tests/test_orchestration.py: sdk-cli-only transcript →
   False; cli marker inside first 256KiB of a >256KiB file → True; cli marker after byte
   262144 → False. (~15 lines; the audit's one High.)
+> **DONE 2026-08-17** — `test_stop_desk_route_sigterms_desk_session` (tests/test_upload.py):
+> asserts SIGTERM fired, no SIGKILL, and zero tmux send-keys/kill-session calls.
+
 - [ ] **`/stop?desk=1` route wiring is untested.** rc_launcher.py:881 (coverage-missed) —
   delete the conditional and the desk ✕ falls through to `stop()`, C-c's a nonexistent tmux
   session, reports "stopped" while the desk claude lives; suite stays green. One RouteTest
   case: hit `/stop?proj=X&desk=1`, assert SIGTERM fired and no tmux `C-c`.
+> **DONE 2026-08-17** — RUNBOOK:17/87/131/299, README:29/107, android/README:51 all synced
+> to the flag-form / desk-badge / token-file reality; CHANGELOG backfilled (icons, desk ✕);
+> `rc_templates` added to ci.yml `--source` (measured 100%).
+
 - [ ] **Doc-sync: three token-era claims instruct re-creating the removed leak channel.**
   RUNBOOK.md:299 ("Token in the LaunchAgent env" under *don't undo these*), README.md:107,
   android/README.md:51 ("baked-in token") all describe the pre-remediation design; also

@@ -48,7 +48,7 @@ that, in-place updates keep it there.
 Besides the **+ upload** button on the `/files` page, the app is a **share target**: in
 any app (Photos, Files, a browser) tap **Share → Remote Control** and the file(s) upload
 straight to `~/rc-share` via the launcher's PUT endpoint — no web page involved, authed
-with the baked-in token. `UploadActivity` shows a progress dialog (per-file bar + byte
+with the token you pasted on first run (CI APKs carry no baked secret; see First run). `UploadActivity` shows a progress dialog (per-file bar + byte
 count), streams each file straight from its content URI, then finishes. Handles multiple
 files at once. This is the reliable upload path — it doesn't touch the WebView, so it
 isn't affected by the reload-on-resume.

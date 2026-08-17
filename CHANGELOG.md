@@ -2,7 +2,23 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+## 2026-08-17
+
+- Audit paydown (the 2026-08-17 audit's Now batch): pinned `has_desk_thread`'s two
+  load-bearing properties (sdk-cli discrimination + the 256KiB read cap — both were
+  mutation-deletable with a green suite) and the `/stop?desk=1` route wiring (the desk ✕
+  could phantom-"stop" nothing); added `rc_templates` to the coverage floors; synced the
+  three token-era doc claims (RUNBOOK's *don't-undo* list literally instructed re-creating
+  the removed leak channel), the stale subcommand launch phrasing, and the ✕/desk-badge
+  behavior into README/RUNBOOK; backfilled the two missing 2026-08-16 entries below.
+
 ## 2026-08-16
+
+- *(backfilled)* Session-location icons on the launcher: 📱 for launcher-run sessions,
+  🖥 for desk sessions — reads faster at a glance than the word tags they replaced.
+- *(backfilled)* Graceful desk-session close: the ✕ on a desk-badged row SIGTERMs the
+  desk claude via `/stop?desk=1` (transcript flushed, relay archived, thread resumable),
+  with the scan cache invalidated so the badge clears on the next poll.
 
 - The idle "Claude is waiting for your input" notification no longer paints a session
   amber "waiting" — under bypassPermissions it is nearly the only Notification that

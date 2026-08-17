@@ -26,9 +26,9 @@ keys won't open Remote Control).
 ## What it does
 
 A small always-on web server on the host shows a searchable list of every
-directory under `~/projects`. Tap one and it launches `claude remote-control` in
-that project's root, held in a detached `tmux` session so it survives the HTTP
-request returning. The session shows up in the Claude app under Code with a green
+directory under `~/projects`. Tap one and it launches claude with Remote Control
+in that project's root (resuming the project's last thread when one exists),
+held in a detached `tmux` session so it survives the HTTP request returning. The session shows up in the Claude app under Code with a green
 dot, and you drive it from there. Because it launched in the project root, it
 loads that project's `CLAUDE.md`, `.claude/` settings, and project MCP exactly
 like the VS Code extension (and re-reads `CLAUDE.md` — global and project — on
@@ -104,8 +104,9 @@ the login lapses while you're away.
 
 ## Security
 
-The launcher binds `0.0.0.0` and is guarded by a random token kept in the service
-environment, not in version control. The token is sent once (URL or bookmark),
+The launcher binds `0.0.0.0` and is guarded by a random token kept in a `0600`
+file outside the repo (`~/.config/rc-launcher/token`) — never in version control,
+the service files, or CI. The token is sent once (URL or bookmark),
 stored as an HttpOnly cookie, then dropped from the URL so it stays out of logs
 and history. Reach it over your LAN or a VPN/subnet route; don't expose the port
 directly to the internet. Remote Control sessions need the claude.ai OAuth login
