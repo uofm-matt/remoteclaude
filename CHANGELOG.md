@@ -4,6 +4,13 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-17
 
+- Evening-audit Now trio: pinned the kill-scope cwd boundary (a bare-startswith mutant
+  survived while ~/projects holds live sibling-prefix pairs the mutant would cross-kill;
+  panel-confirmed High) and the lookalike-binary comm check; pinned the ≥400 log's token
+  redaction (reverting it kept the suite green — the last unpinned leg of the token
+  remediation); rewrote RUNBOOK's two stale "read-only by design" share claims in the
+  name-the-hazard form — the second stale invariant caught in that doc in two days, both
+  by the half-true survival mechanism.
 - Audit Next batch: one `_desk_claude_pids()` generator is now the single definition of
   "desk claude" for both the badge scan and the kill/takeover paths (two verbatim copies
   could drift scopes apart silently); `_settle_prompt` hoists the interactive-prompt

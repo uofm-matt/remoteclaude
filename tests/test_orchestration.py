@@ -114,13 +114,17 @@ class OrchestrationTest(unittest.TestCase):
             self.calls.append(cmd)
             key = " ".join(map(str, cmd))
             if "pgrep" in key:
-                return proc(stdout="111 222 333\n")
-            if "comm=" in key:  # 333 isn't a claude process at all
-                return proc(stdout="grep\n" if "333" in key else "claude\n")
+                return proc(stdout="111 222 333 444 555\n")
+            if "comm=" in key:  # 333 isn't a claude process; 555 is a lookalike binary —
+                # loosening the equality check to a substring match would include it
+                return proc(stdout="grep\n" if "333" in key
+                            else "claude-helper\n" if "555" in key else "claude\n")
             if "command=" in key:  # 222 is an RC server, not a desktop client
                 return proc(stdout="claude remote-control\n" if "222" in key else "claude\n")
-            if "-Fn" in key:  # ALL three rooted in proj -> only the comm/RC filters can exclude 222/333
-                return proc(stdout=f"n{root}/sub\n")
+            if "-Fn" in key:  # 444 lives in the SIBLING-PREFIX dir projx: real ~/projects has
+                # such pairs (alpha/alpha-sub), and a bare startswith(root) mutant
+                # would cross-kill it — the == root / root+os.sep boundary is load-bearing
+                return proc(stdout=f"n{root}x\n" if "444" in key else f"n{root}/sub\n")
             return proc()
         rc_launcher.subprocess.run = run
         self.assertEqual(rc_launcher.desktop_sessions("proj"), [111])

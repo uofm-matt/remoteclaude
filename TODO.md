@@ -11,17 +11,31 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Now — audit 2026-08-17 evening, target 2026-08-18
 
+> **DONE 2026-08-17** — the desktop_sessions fixture gained pid 444 (cwd = the sibling
+> `projx`, excluded by the boundary guard) and pid 555 (comm `claude-helper`, excluded by
+> the equality check); both formerly-surviving mutants now fail the test.
+
 - [ ] **The kill-scope sibling-prefix guard is untested.** rc_launcher.py:304-305 — mutating
   `cwd == root or cwd.startswith(root + os.sep)` to bare `startswith(root)` survives all 104
   tests, and ~/projects holds live sibling-prefix pairs (alpha/alpha-sub,
   beta/beta-sub) the mutant would cross-kill. Add to the desktop_sessions fixture: a
   pid whose cwd is `root + "x"` asserted excluded, and a `claude-helper` comm asserted
   excluded (the comm equality check is loosenable the same way). (~8 lines.)
+> **DONE 2026-08-17** — `test_rejected_request_log_omits_query_token` (tests/test_upload.py):
+> a 4xx with `?token=` asserts the path is logged and the credential is not; reverting the
+> redaction now fails the suite.
+
 - [ ] **Pin the ≥400 log redaction.** rc_launcher.py:708-711 — reverting
   `urlparse(self.path).path` to `self.path` keeps all 104 green; the app's uploads carry
   `?token=`, so that revert re-opens the log leak. 4-line test: fire a 4xx with `?token=`,
   assert the token absent from the captured log line. The last unpinned leg of the token
   remediation.
+> **DONE 2026-08-17** — both passages rewritten in the name-the-hazard form ("do not
+> 'restore' a read-only HTTP share: uploads are load-bearing for the share-target");
+> retired-wording sweep (`git grep -in 'read-only' -- '*.md'`) now hits only the warning
+> itself and this entry's preserved wording. The global CLAUDE.md echo remains the
+> operator's to sync.
+
 - [ ] **RUNBOOK still calls the share "read-only by design" — twice.** RUNBOOK.md:158, :176 —
   upload/delete shipped long ago and the same file documents the upload protocol at :196.
   A stale by-design sentence instructs deleting the upload path. Rewrite both naming what

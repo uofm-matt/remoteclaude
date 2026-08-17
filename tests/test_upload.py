@@ -189,6 +189,19 @@ class UploadServerTest(unittest.TestCase):
         self.req("PUT", "/files/z", body=b"z", headers={"X-Rc-Offset": "bad", "X-Rc-Total": "1"})
         self.assertTrue(any(a[0] == "http" for a in logged))  # the 400 left an audit line
 
+    def test_rejected_request_log_omits_query_token(self):
+        # The app's uploads carry ?token= in the query, and the launcher log is a
+        # world-readable /tmp file: the >=400 audit line must record the PATH only.
+        # Reverting the redaction to raw self.path re-opens the leak the token
+        # remediation closed — this pin is what makes that revert fail.
+        logged: list = []
+        rc_launcher.log_event = lambda *a: logged.append(a)
+        self.req("PUT", f"/files/z?token={TOKEN}", body=b"z",
+                 headers={"X-Rc-Offset": "bad", "X-Rc-Total": "1"})
+        line = " ".join(map(str, next(a for a in logged if a[0] == "http")))
+        self.assertIn("/files/z", line)     # the path is still traceable
+        self.assertNotIn(TOKEN, line)       # the credential never reaches the log
+
     def test_download_streams_file(self):
         data = b"hello world " * 50
         Path(self.share, "dl.bin").write_bytes(data)

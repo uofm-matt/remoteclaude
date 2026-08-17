@@ -155,9 +155,9 @@ phone.
 
 ## File share
 
-A dedicated drop directory, `~/rc-share` (`RC_SHARE_DIR`), served read-only over HTTP at
-`/files` behind the same token as the launcher, and — if you turn on SMB by hand —
-mountable as a drive on Windows. It is a directory of its own, never `~/projects` or
+A dedicated drop directory, `~/rc-share` (`RC_SHARE_DIR`), served over HTTP at `/files`
+behind the same token as the launcher — browse, download, resumable upload, long-press
+delete — and, if you turn on SMB by hand, mountable as a drive on Windows. It is a directory of its own, never `~/projects` or
 `$HOME`: the `/files` handler resolves every request with `realpath` and 404s anything
 that lands outside `~/rc-share`, including symlinks that point out of it.
 
@@ -173,8 +173,10 @@ that lands outside `~/rc-share`, including symlinks that point out of it.
   (multiple files at once); they PUT into the folder you're viewing. **Long-press** a
   file to delete it (asks first). Uploads and deletes work in the phone app's web view
   too, no app rebuild needed — they're page + server, not native.
-- **Mount on Windows (optional).** HTTP is read-only by design; the read-write path is
-  SMB. Enable it once: System Settings → General → Sharing → **File Sharing**, add *only*
+- **Mount on Windows (optional).** SMB is an optional second door for drive-letter
+  workflows — HTTP already does read + upload + delete (realpath-confined; see the
+  Upload protocol section). Do not "restore" a read-only HTTP share: uploads are
+  load-bearing for the phone app's share-target and the resumable-upload clients. Enable it once: System Settings → General → Sharing → **File Sharing**, add *only*
   `~/rc-share`, protocol SMB, guest off. Two gotchas the Apple docs skip: tick your user
   **On** in *Options* (that stores the SMB password hash — without it auth fails with no
   clear error), and mount by **IP**, not name — the subnet route carries unicast only, so
