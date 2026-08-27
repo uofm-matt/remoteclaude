@@ -153,6 +153,44 @@ Caveat: if VS Code auto-restarts the session it just lost and reattaches, it re-
 the collision — close that panel rather than letting it reconnect while you drive from the
 phone.
 
+### Desk-side shell integration (bash/zsh, opt-in)
+
+The launcher guards the phone→desk direction above; two snippets in this repo cover
+the desk side. Both are opt-in — nothing sources them for you:
+
+- **`rc_prompt.zsh`** — a right-prompt tag (`rc:working` / `rc:waiting`) when a
+  phone-driven turn is live in the repo you're standing in. `source` it from `~/.zshrc`
+  and you're done (it sets `RPROMPT`; fold `$(_rc_prompt)` into yours if you already use
+  one). zsh-only (it's a prompt hook).
+- **`rc_guard.sh`** — the desk→phone launch guard, sourceable from bash or zsh (the
+  logic lives in `rc_guard.py`, plain stdlib Python; the shim just maps its exit code
+  to `_RC_GUARD_ARGS`). Without it, typing `claude` in a
+  project whose `rc-*` session is live walks into the thread that session is holding
+  (`--continue` dies with "No conversation found to continue"; a fresh launch silently
+  ignores the running session). With it, the wrapper stops first and offers: **attach**
+  to the running tmux session (one conversation, phone and desk both driving it),
+  **take over** (close the remote session the way `stop()` does — SIGINT so it
+  deregisters from the relay and flushes its transcript — then resume the thread at the
+  desk), a **separate fresh** session, or quit.
+
+Minimal wiring, if `claude` isn't already a function in your `~/.zshrc` / `~/.bashrc`:
+
+```sh
+source /path/to/remoteclaude/rc_guard.sh
+claude() {
+  _rc_guard "$@" || return
+  # $_RC_GUARD_ARGS is "--new" when you chose "separate fresh session" — it is a
+  # signal for YOUR resume logic (skip --continue), never an argument to claude.
+  command claude "$@"
+}
+```
+
+If your wrapper auto-resumes (emits `--continue` when a transcript exists), feed
+`$_RC_GUARD_ARGS` to that logic so the fresh choice actually skips the resume. The guard
+never prompts for scripts/pipes (no tty) or when you already chose a session yourself
+(`-c`/`-r`/`-p`/`--new`), and it matches tmux sessions exactly — a live `rc-alpha-sub`
+does not count as `rc-alpha`.
+
 ## File share
 
 A dedicated drop directory, `~/rc-share` (`RC_SHARE_DIR`), served over HTTP at `/files`

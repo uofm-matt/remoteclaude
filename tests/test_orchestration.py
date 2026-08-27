@@ -349,6 +349,18 @@ class OrchestrationTest(unittest.TestCase):
         kill = next(i for i, c in enumerate(cmds) if "kill-session" in c)
         self.assertLess(sigint, kill)  # SIGINT (relay deregister) MUST precede the SIGHUP kill
 
+    def test_tmux_targets_are_exact_match(self):
+        # A bare -t prefix-matches: with rc-proj absent and rc-proj-sub live, stop()
+        # would C-c the SIBLING's session and launch() report "already" (verified
+        # against a live tmux). Every -t target must be the exact-match `=name` form.
+        rc_launcher.RESUME, rc_launcher.SPAWN, rc_launcher.TAKEOVER = "continue", "same-dir", False
+        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        rc_launcher.launch("proj")
+        rc_launcher.stop("proj")
+        targets = [c[i + 1] for c in self.calls for i, a in enumerate(c) if a == "-t"]
+        self.assertGreaterEqual(len(targets), 5)  # spawn control calls + stop's pair
+        self.assertEqual(set(targets), {"=rc-proj"})
+
     # --- login_status / running ---
 
     def test_login_status_parses_claude_auth(self):

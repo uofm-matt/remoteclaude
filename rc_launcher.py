@@ -184,7 +184,10 @@ def git_states(projs: list[str] | None = None) -> dict[str, dict]:
 def _tmux(*args: str) -> subprocess.CompletedProcess[str]:
     """A tmux control call with its chatter captured, so it stays out of the audit log.
     No OSError guard, unlike _run: a missing tmux must surface on the launch/stop paths;
-    running() catches its own FileNotFoundError because status dots are non-essential."""
+    running() catches its own FileNotFoundError because status dots are non-essential.
+    Every -t below is `=name`: a bare -t prefix-matches, so with rc-alpha absent and
+    rc-alpha-sub live, alpha's stop() would C-c the sibling and launch() report
+    "already" (verified against tmux 3.x)."""
     return subprocess.run([TMUX, *args], capture_output=True, text=True)
 
 
@@ -210,7 +213,7 @@ def session_states() -> dict[str, str]:
 
 def death_reason(sess: str) -> str:
     """Why a just-launched RC session died, read from its dead pane."""
-    out = _tmux("capture-pane", "-t", sess, "-p").stdout
+    out = _tmux("capture-pane", "-t", f"={sess}", "-p").stdout
     last = next((s for ln in reversed(out.splitlines())
                  if (s := ln.strip()) and not s.startswith("Pane is dead")), "")
     low = last.lower()
@@ -427,10 +430,10 @@ def _settle_prompt(sess: str, proj: str) -> str:
     9h/833k-token thread). Returns '' when there is no prompt or it was answered;
     a death reason for an UNKNOWN confirm-style prompt (fail loudly, never
     phantom-succeed)."""
-    pane = _tmux("capture-pane", "-t", sess, "-p").stdout
+    pane = _tmux("capture-pane", "-t", f"={sess}", "-p").stdout
     for sentinel, (keys, note) in _PROMPT_ANSWERS.items():
         if sentinel in pane:
-            _tmux("send-keys", "-t", sess, *keys)
+            _tmux("send-keys", "-t", f"={sess}", *keys)
             log_event("launch", proj, note)
             return ""
     if "Enter to confirm" in pane:
@@ -450,23 +453,23 @@ def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
          "-c", os.path.join(PARENT, proj), " ".join(cmd)],
         check=False,
     )
-    _tmux("set-option", "-t", sess, "remain-on-exit", "on")
+    _tmux("set-option", "-t", f"={sess}", "remain-on-exit", "on")
     time.sleep(3)
-    dead = _tmux("list-panes", "-t", sess, "-F", "#{pane_dead}").stdout.strip()
+    dead = _tmux("list-panes", "-t", f"={sess}", "-F", "#{pane_dead}").stdout.strip()
     if dead != "0":
         reason = death_reason(sess)
-        _tmux("kill-session", "-t", sess)
+        _tmux("kill-session", "-t", f"={sess}")
         return reason
     if reason := _settle_prompt(sess, proj):
-        _tmux("kill-session", "-t", sess)
+        _tmux("kill-session", "-t", f"={sess}")
         return reason
-    _tmux("set-option", "-t", sess, "remain-on-exit", "off")
+    _tmux("set-option", "-t", f"={sess}", "remain-on-exit", "off")
     return ""
 
 
 def launch(proj: str) -> tuple[str, str | None]:
     sess = f"rc-{proj}"
-    if _tmux("has-session", "-t", sess).returncode == 0:
+    if _tmux("has-session", "-t", f"={sess}").returncode == 0:
         return "already", None
     ensure_trusted(proj)
     if snap := snapshot(proj):
@@ -517,9 +520,9 @@ def stop(proj: str) -> tuple[str, str | None]:
     # dropping off the network — so the app keeps showing the session
     # "connected" until the relay's inactivity timeout (~10 min) evicts it.
     # Give claude a moment to disconnect, then hard-kill the session as fallback.
-    _tmux("send-keys", "-t", sess, "C-c")
+    _tmux("send-keys", "-t", f"={sess}", "C-c")
     time.sleep(2)
-    _tmux("kill-session", "-t", sess)
+    _tmux("kill-session", "-t", f"={sess}")
     return "stopped", None
 
 

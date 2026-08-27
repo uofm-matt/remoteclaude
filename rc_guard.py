@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""Desk-side launch guard: don't start a desk `claude` blind while a phone
+(remote-control) session already owns this project.
+
+The launcher guards the other direction (a phone tap closes the desk session
+before resuming); without this, a desk `claude --continue` walks into the thread
+the live rc-* session is holding and dies with "No conversation found to
+continue". Shell-agnostic core for the rc_guard.sh shim (bash and zsh).
+
+Exit codes are the contract: 0 = proceed with the launch (no live session,
+guard skipped, or takeover complete), 2 = proceed but force a FRESH session
+(the shim turns this into --new for the caller's resume logic), 1 = do not
+launch (quit, the attach WAS the session, or a takeover that failed to clear).
+"""
+
+import contextlib
+import os
+import subprocess
+import sys
+import termios
+import time
+import tty
+
+TMUX = os.environ.get("RC_TMUX_BIN", "tmux")
+PARENT = os.path.expanduser(os.environ.get("RC_PROJECTS_PARENT", "~/projects"))
+TAKEOVER_WAIT = 5.0  # seconds to let claude exit on SIGINT before kill-session
+
+PROCEED, ABORT, FRESH = 0, 1, 2
+# The caller already chose a session, or isn't starting one: never second-guess.
+CALLER_CONTROLS = frozenset(
+    {
+        "-c",
+        "--continue",
+        "-r",
+        "--resume",
+        "-p",
+        "--print",
+        "--new",
+        "-v",
+        "--version",
+        "-h",
+        "--help",
+    }
+)
+CALLER_CONTROL_PREFIXES = ("--resume=", "--session-id")
+# Subcommands that never open a conversation thread.
+NON_SESSION_SUBCOMMANDS = frozenset(
+    {
+        "mcp",
+        "update",
+        "doctor",
+        "auth",
+        "plugin",
+        "install",
+        "config",
+        "agents",
+        "setup-token",
+        "migrate-installer",
+    }
+)
+
+
+def caller_controls(argv: list[str]) -> bool:
+    if argv and argv[0] in NON_SESSION_SUBCOMMANDS:
+        return True
+    return any(
+        a in CALLER_CONTROLS or a.startswith(CALLER_CONTROL_PREFIXES) for a in argv
+    )
+
+
+def _same_dir(a: str, b: str) -> bool:
+    with contextlib.suppress(OSError):
+        return os.path.samefile(a, b)
+    return False
+
+
+def live_sess(cwd: str, parent: str) -> str | None:
+    """The rc tmux session owning cwd's project, or None. Paths are compared in both
+    physical and logical form: a trailing slash on RC_PROJECTS_PARENT, a symlinked
+    parent, or a symlinked project dir would otherwise silently disable the guard.
+    `=name` is load-bearing too: a bare -t prefix-matches, so rc-alpha would match a
+    running rc-alpha-sub. A missing tmux means no rc session can exist."""
+    # getcwd() is physical; the shell's $PWD is logical. A project dir that is itself
+    # a symlink (~/projects/foo -> elsewhere) only matches through the logical form,
+    # and that is the name the launcher's rc-foo session carries. Parent is tried in
+    # both forms too (macOS /var -> /private/var). join(.., "") = trailing sep, '/'
+    # stays '/'.
+    candidates = [os.path.realpath(cwd)]
+    if (pwd := os.environ.get("PWD")) and _same_dir(pwd, cwd):
+        candidates.insert(0, os.path.normpath(pwd))
+    parents = {
+        os.path.join(p, "")
+        for p in (os.path.realpath(parent), os.path.normpath(parent))
+    }
+    hit = next(((c, p) for c in candidates for p in parents if c.startswith(p)), None)
+    if hit is None:
+        return None
+    inside, parent = hit
+    proj = inside[len(parent) :].split(os.sep, 1)[0]
+    sess = f"rc-{proj}"
+    try:
+        r = subprocess.run([TMUX, "has-session", "-t", f"={sess}"], capture_output=True)
+    except FileNotFoundError:
+        return None
+    return sess if r.returncode == 0 else None
+
+
+def session_alive(sess: str) -> bool:
+    r = subprocess.run([TMUX, "has-session", "-t", f"={sess}"], capture_output=True)
+    return r.returncode == 0
+
+
+def read_key() -> str:
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        return sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def state_tag() -> str:
+    """rc_status.py's working/waiting glyph for cwd, '' when it has nothing to say
+    (or a hung state dir keeps it from saying anything within 2s)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        r = subprocess.run(
+            [sys.executable, os.path.join(here, "rc_status.py")],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        return r.stdout.strip()
+    return ""
+
+
+def attach(sess: str) -> None:
+    # Inside an existing tmux client, attach refuses ("sessions should be nested
+    # with care"); switch-client is the in-tmux equivalent.
+    verb = "switch-client" if os.environ.get("TMUX") else "attach"
+    subprocess.run([TMUX, verb, "-t", f"={sess}"])
+
+
+def takeover(sess: str) -> int:
+    """Mirror the launcher's stop(): SIGINT so claude deregisters from the relay and
+    flushes its transcript, wait for the pane to actually exit, kill-session only as
+    the fallback — then confirm. The caller's normal --continue resumes the same
+    thread at the desk; if the session is somehow still alive, refuse to launch
+    into it."""
+    subprocess.run([TMUX, "send-keys", "-t", f"={sess}", "C-c"], capture_output=True)
+    deadline = time.monotonic() + TAKEOVER_WAIT
+    while session_alive(sess) and time.monotonic() < deadline:
+        time.sleep(0.25)
+    if session_alive(sess):
+        subprocess.run([TMUX, "kill-session", "-t", f"={sess}"], capture_output=True)
+    if session_alive(sess):
+        print(
+            f"{sess} is still alive after SIGINT and kill-session; not launching.",
+            file=sys.stderr,
+        )
+        return ABORT
+    return PROCEED
+
+
+def main(argv: list[str]) -> int:
+    if not (sys.stdin.isatty() and sys.stderr.isatty()) or caller_controls(argv):
+        return PROCEED
+    sess = live_sess(os.getcwd(), PARENT)
+    if not sess:
+        return PROCEED
+    tag = state_tag()
+    err = sys.stderr
+    print(
+        f"A phone session is live for this project ({sess}{', ' + tag if tag else ''}).",
+        file=err,
+    )
+    print("  [a] attach to it here — one conversation, desk and phone", file=err)
+    print(
+        "  [t] take over — close the remote session, resume the thread here", file=err
+    )
+    print("  [f] separate fresh session alongside it", file=err)
+    print("  [q] quit (default)", file=err)
+    print("> ", end="", file=err, flush=True)
+    ans = read_key()
+    print(ans, file=err)
+    match ans:
+        case "a":
+            attach(sess)
+            return ABORT  # the attach WAS the session; don't launch another
+        case "t":
+            return takeover(sess)
+        case "f":
+            return FRESH
+        case _:
+            return ABORT
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

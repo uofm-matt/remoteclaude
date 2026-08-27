@@ -46,7 +46,11 @@ the directory trusted, and launches the session.
 
 When a phone-driven turn is running on a repo you also have open locally, a desk
 indicator (a zsh prompt tag, and working/waiting dots in the launcher) tells you,
-so you don't edit the same files out from under it.
+so you don't edit the same files out from under it. And launching claude at the
+desk while a phone session owns that project is guarded too: source
+[`rc_guard.sh`](rc_guard.sh) (bash or zsh) in your claude wrapper and it stops first, offering
+to attach to the running session, take it over at the desk, or start a separate
+fresh one — instead of dying on the thread the phone session is holding.
 
 ## File share
 
@@ -83,6 +87,7 @@ so the launcher only handles switching between projects.
 | `rc_launcher.py` | Token-guarded web server: launch, stop, live status, create-new-project, and `/files` browse/download/upload of `~/rc-share`. Runs under launchd (macOS) or systemd --user (Linux). |
 | `rc_state_hook.py` | Claude hook recording a remote session's turn state (working/waiting/idle) for desk-side awareness. |
 | `rc_status.py` / `rc_prompt.zsh` | Reader + opt-in zsh prompt tag showing when a remote turn is live in your current repo. |
+| `rc_guard.py` / `rc_guard.sh` | Opt-in desk-side launch guard (logic in Python, one shim for bash and zsh): wraps your `claude` so it offers attach / takeover / fresh instead of launching blind into a live phone session's thread. |
 | `rc_healthcheck.py` | Watchdog that runs `claude auth status` every 30 min; notifies (desktop + optional ntfy) if the login lapses. |
 | `install.sh` / `uninstall.sh` | Service setup and teardown; generates the token outside the repo, registers the state hook. |
 | `RUNBOOK.md` | Full setup, daily use, login recovery, and design notes. |

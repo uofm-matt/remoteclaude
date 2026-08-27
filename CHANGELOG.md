@@ -2,6 +2,43 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+## 2026-08-26
+
+- Desk-side launch guard (`rc_guard.py` + `rc_guard.sh`, opt-in like the prompt tag):
+  a desk `claude` wrapped with `_rc_guard` no longer launches blind while a phone
+  (remote-control) session owns the project — it offers attach (one conversation, desk
+  and phone), takeover (close the remote session the way the launcher's stop() does,
+  resume the thread at the desk), a separate fresh session, or quit. Hit live: desk
+  `claude --continue` under a running rc-* session died with "No conversation found to
+  continue"; the launcher guarded the phone->desk direction, nothing guarded desk->phone.
+  Started as zsh-only, rebuilt same-day as stdlib Python behind one bash+zsh shim so the
+  logic is unit-tested (19 tests incl. a real-pty keypress; in the coverage floor at 99%)
+  and one implementation serves every host the launcher runs on. The Tier-H gate's
+  panel + defect pass then landed six fixes before it shipped: a missing tmux failed
+  CLOSED (traceback -> exit 1 -> shim read "quit" -> every desk launch blocked; now "no
+  tmux" means "no rc session"); a trailing slash on `RC_PROJECTS_PARENT` or a symlinked
+  parent silently disabled detection (both paths realpath'd now); `[a]` inside an
+  existing tmux client used `attach`, which tmux refuses (`switch-client` under `$TMUX`);
+  takeover fired kill-session on a fixed 2s timer and returned PROCEED regardless (now
+  polls has-session up to 5s, kills only as fallback, refuses to launch if the session
+  survives); `claude --version`/`--help`/`mcp …`/`--resume=id` popped the menu; and the
+  pty test raced a 50ms timer against `setraw`'s TCSAFLUSH (polls for raw mode now — the
+  timer version hung a loaded runner forever). A second panel pass on the fixed code
+  added two more: a project dir that is itself a symlink never matched (getcwd() is
+  physical; the shell's logical `$PWD` is now tried first when it is the same dir, and
+  the parent in both forms — macOS's /var -> /private/var made the test fail before
+  the fix did), and `RC_PROJECTS_PARENT=/` produced `//` and matched nothing. Six
+  further panel/defect leads were dismissed with an oracle each (recorded in
+  `.claude/refutations.md`, local — that dir is gitignored here). No Windows port by
+  design: the guard checks local tmux sessions on the launcher host, and the launcher
+  (tmux + launchd/systemd) cannot run on Windows — a Windows desk reaches the host over
+  SSH, where the shim already applies.
+- Every launcher tmux `-t` target is now the exact-match `=name` form: bare `-t`
+  prefix-matches, so with `rc-alpha` absent and `rc-alpha-sub` live, alpha's stop()
+  C-c'd the sibling and launch() reported "already" (verified against a live tmux;
+  found while building the guard — the sibling-prefix class from the kill-scope audit
+  pin, one layer down). Pinned by a mutant-verified test.
+
 ## 2026-08-17
 
 - Readability pass, no behavior change: one `_tmux()` wrapper now carries the twelve
