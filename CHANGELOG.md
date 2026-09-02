@@ -2,6 +2,20 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+## 2026-09-02
+
+- Whole-repo audit (`/audit`, four read-only finders + cross-family panel): net A- —
+  architecture A-, code A, tests B+, process A-. Tests dropped from A- because 54 targeted
+  mutants on shadow copies left 36 green, four of them on load-bearing launcher paths (the
+  takeover guard, its SIGTERM grace loop, the `ensure_trusted` call site, `RC_PROJECT` in the
+  session env) and one on the resumed-upload truncate that a reproduction showed reporting a
+  stale tail as stored. Process found one inverted RUNBOOK claim (Linux takeover "no-op" while
+  the code reads /proc) and one half-true invariant (RC_SPAWN "in the plist" that the installer
+  overwrites). TODO.md carries the dated paydown (Now 2026-09-05, Next 2026-09-12) and two
+  operator decisions (gate `ruff format`; where the refutation record lives in a repo that
+  gitignores `.claude/`). Scorecard the same morning: A+ (97.2% over 8 files, 0 lint, 0 debt
+  markers) — the countable half cannot see any of the above, which is the point of running both.
+
 ## 2026-08-26
 
 - Desk-side launch guard (`rc_guard.py` + `rc_guard.sh`, opt-in like the prompt tag):
