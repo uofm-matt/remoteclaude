@@ -19,9 +19,8 @@ class FilesAuthTest(ServerCase):
         cookie = hdrs.get("set-cookie", "")
         self.assertIn("rc_token=", cookie)
         self.assertIn("HttpOnly", cookie)  # not readable from page JS
-        self.assertIn(
-            "SameSite=Strict", cookie
-        )  # CSRF defense for the cookie-authed writes
+        # CSRF defense for the cookie-authed writes
+        self.assertIn("SameSite=Strict", cookie)
         self.assertIn("Path=/", cookie)
 
     def test_valid_token_beats_stale_cookie(self):
@@ -71,9 +70,8 @@ class FilesAuthTest(ServerCase):
             )
 
     def test_fail_closed_when_no_token_configured(self):
-        rc_config.TOKEN = (
-            ""  # misconfigured server: an empty token must deny, not match empty creds
-        )
+        # misconfigured server: an empty token must deny, not match empty creds
+        rc_config.TOKEN = ""
         try:
             # empty ?token= and an empty rc_token cookie both reach compare_digest("","") — that
             # returns True, so only the `if not TOKEN: return False` guard makes these 403. Sending
@@ -115,9 +113,8 @@ class FilesAuthTest(ServerCase):
         resp = s.recv(65536).decode("latin1")
         s.close()
         self.assertIn(" 200 ", resp.splitlines()[0])  # the GET itself succeeded
-        self.assertIn(
-            "connection: close", resp.lower()
-        )  # and the server closed the socket
+        # and the server closed the socket
+        self.assertIn("connection: close", resp.lower())
 
     def test_chunked_body_bearing_get_closes(self):
         # a chunked (no Content-Length) body on GET must also close, or it desyncs keep-alive
@@ -156,9 +153,8 @@ class FilesAuthTest(ServerCase):
             body=b"z",
             headers={"X-Rc-Offset": "bad", "X-Rc-Total": "1"},
         )
-        self.assertTrue(
-            any(a[0] == "http" for a in logged)
-        )  # the 400 left an audit line
+        # the 400 left an audit line
+        self.assertTrue(any(a[0] == "http" for a in logged))
 
     def test_rejected_request_log_omits_query_token(self):
         # The app's uploads carry ?token= in the query, and the launcher log is a

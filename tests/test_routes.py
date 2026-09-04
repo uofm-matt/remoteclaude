@@ -36,9 +36,8 @@ class RowsHtmlTest(unittest.TestCase):
     def test_hides_rcpart_and_escaping_symlink(self):
         open(os.path.join(self.share, "real.txt"), "w").close()
         open(os.path.join(self.share, "partial.rcpart"), "w").close()
-        os.symlink(
-            tempfile.mkdtemp(), os.path.join(self.share, "escape")
-        )  # -> outside SHARE
+        # -> outside SHARE
+        os.symlink(tempfile.mkdtemp(), os.path.join(self.share, "escape"))
         rows = rc_share.rows_html(self.share, "")
         self.assertIn("real.txt", rows)
         self.assertNotIn("partial", rows)  # .rcpart hidden
@@ -54,15 +53,15 @@ class RowsHtmlTest(unittest.TestCase):
         os.makedirs(os.path.join(self.share, "adir"))
         open(os.path.join(self.share, "afile.txt"), "w").close()
         rows = rc_share.rows_html(self.share, "")
-        self.assertLess(
-            rows.index("adir"), rows.index("afile.txt")
-        )  # dirs before files
+        # dirs before files
+        self.assertLess(rows.index("adir"), rows.index("afile.txt"))
         self.assertIn(
             "empty", rc_share.rows_html(os.path.join(self.share, "adir"), "/adir")
         )
+        # OSError is not "empty"
         self.assertIn(
             "unreadable", rc_share.rows_html(os.path.join(self.share, "no"), "/no")
-        )  # OSError is not "empty"
+        )
 
 
 class RouteTest(ServerCase):
@@ -77,9 +76,8 @@ class RouteTest(ServerCase):
         os.makedirs(rc_config.PARENT)
         rc_sessions.STATE_DIR = Path(self.aux, "state")
         rc_config.CLAUDE_JSON = os.path.join(self.aux, "claude.json")
-        rc_config.CLAUDE_PROJECTS = Path(
-            self.aux, "claude-projects"
-        )  # never the host's
+        # never the host's
+        rc_config.CLAUDE_PROJECTS = Path(self.aux, "claude-projects")
         Path(rc_config.CLAUDE_JSON).write_text("{}")
         self.responses: dict = {}
         self.desk: dict = {}

@@ -29,19 +29,11 @@ class DeskTest(MockedToolsCase):
         self.assertTrue(rc_desk._alive(42))
         self.assertFalse(rc_desk._alive(99))
 
-    # --- death_reason classification ---
-
     def test_pid_cwd_via_proc_symlink(self):
-        real_islink, real_readlink = os.path.islink, os.readlink
+        # both singletons are restored by the harness's restore_globals()
         os.path.islink = lambda p: p == "/proc/777/cwd"
         os.readlink = lambda p: "/the/cwd"
-        try:
-            self.assertEqual(rc_desk._pid_cwd("777"), "/the/cwd")
-        finally:
-            os.path.islink, os.readlink = (
-                real_islink,
-                real_readlink,
-            )
+        self.assertEqual(rc_desk._pid_cwd("777"), "/the/cwd")
 
     def test_desktop_sessions_scopes_by_cwd(self):
         root = os.path.join(rc_config.PARENT, "proj")
@@ -66,26 +58,20 @@ class DeskTest(MockedToolsCase):
 
     def test_takeover_sigterms_and_returns_pids(self):
         self.desk = {"111": desk(os.path.join(rc_config.PARENT, "proj"))}
-        self.alive = (
-            set()
-        )  # after SIGTERM the process is gone -> _alive False, no SIGKILL
+        # after SIGTERM the process is gone -> _alive False, no SIGKILL
+        self.alive = set()
         self.assertEqual(rc_desk.takeover("proj"), [111])
         self.assertIn((111, signal.SIGTERM), self.killed)
 
     def test_takeover_sigkills_straggler(self):
         self.desk = {"111": desk(os.path.join(rc_config.PARENT, "proj"))}
         self.alive = {111}  # survives SIGTERM -> forces the SIGKILL path
-        ticks = iter(
-            [0.0, 1.0, 10.0]
-        )  # advance time past the 5s wait without real sleeping
-        real_time = time.time
-        time.time = lambda: next(ticks, 100.0)
+        # advance time past the 5s wait without real sleeping
+        ticks = iter([0.0, 1.0, 10.0])
+        time.time = lambda: next(ticks, 100.0)  # restore_globals() puts it back
         sleeps = []
         time.sleep = lambda s: sleeps.append(s)
-        try:
-            rc_desk.takeover("proj")
-        finally:
-            time.time = real_time
+        rc_desk.takeover("proj")
         self.assertIn((111, signal.SIGKILL), self.killed)
         # the grace period must actually elapse first: deleting the wait loop kept
         # every test green while SIGKILL landed instantly
@@ -107,8 +93,6 @@ class DeskTest(MockedToolsCase):
         scans = self._pgreps()
         rc_desk.desk_projects()
         self.assertEqual(self._pgreps(), scans)
-
-    # --- launch / stop ---
 
     def test_desk_projects_ttl_expiry_rescans(self):
         rc_config.DESK_TTL = 0.0  # expire immediately: every call must rescan

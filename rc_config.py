@@ -58,25 +58,20 @@ RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
 TAKEOVER = os.environ.get("RC_TAKEOVER", "1") not in ("0", "off", "")
 HOST = socket.gethostname().split(".")[0]
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")
-CLAUDE_PROJECTS = Path(
-    os.path.expanduser("~/.claude/projects")
-)  # per-project transcripts
+# per-project transcripts
+CLAUDE_PROJECTS = Path(os.path.expanduser("~/.claude/projects"))
 SHARE = os.path.realpath(
     os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc-share"))
 )
 RCPART_TTL = 6 * 3600  # abandoned .rcpart uploads (no writes in this long) get swept
-STOP_WAIT = float(
-    os.environ.get("RC_STOP_WAIT", "5")
-)  # SIGINT grace before kill-session
-GIT_TTL = float(
-    os.environ.get("RC_GIT_TTL", "30")
-)  # per-project git state is cached this long
-GIT_STATUS_TIMEOUT = float(
-    os.environ.get("RC_GIT_STATUS_TIMEOUT", "3")
-)  # cap a hung `git status`
-DESK_TTL = float(
-    os.environ.get("RC_DESK_TTL", "10")
-)  # desk-session scan is cached this long
+# SIGINT grace before kill-session
+STOP_WAIT = float(os.environ.get("RC_STOP_WAIT", "5"))
+# per-project git state is cached this long
+GIT_TTL = float(os.environ.get("RC_GIT_TTL", "30"))
+# cap a hung `git status`
+GIT_STATUS_TIMEOUT = float(os.environ.get("RC_GIT_STATUS_TIMEOUT", "3"))
+# desk-session scan is cached this long
+DESK_TTL = float(os.environ.get("RC_DESK_TTL", "10"))
 LOGIN_TTL = 60.0  # `claude auth status` spawns a process; the phone polls every 5s
 
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")

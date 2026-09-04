@@ -263,6 +263,14 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Later — unscheduled
 
+- [ ] **`rc_desk.takeover()` times its SIGTERM grace with `time.time()`; `rc_tmux.graceful_stop()`
+  uses `time.monotonic()`.** rc_desk.py — a wall-clock step (NTP, DST) can shorten or stretch
+  the 5s before SIGKILL. Switching is a behavior change with two test hooks on `time.time`
+  (`test_takeover_sigkills_straggler`, `_harness._STDLIB`), so it is not a quality-pass edit.
+  Fix: `monotonic` + re-point the two hooks. (/optimize finding, 2026-09-04.)
+- [ ] **`TTLCache._inflight` is never pruned** — one `Lock` per distinct argument tuple for the
+  process lifetime. rc_config.py. Bounded by the project count in practice (keys are project
+  names or `()`), so a note, not a leak; prune on `invalidate()` if a keyed cache ever grows.
 - [ ] **`PARENT` is realpath'd since the cut; a symlinked `RC_PROJECTS_PARENT` is untested.**
   rc_config.py — `ensure_trusted`'s `~/.claude.json` key, `has_desk_thread`'s transcript slug
   and tmux `-c` all now use the physical path (claude keys by physical getcwd, so probably

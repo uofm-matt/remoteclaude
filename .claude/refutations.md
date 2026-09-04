@@ -37,3 +37,13 @@ Written by `refute.py`; the format is parsed, so keep the `- key: value` shape.
 - oracle: grep: the only suppress(OSError) in rc_share.py is sweep_rcparts (unlink loop), _upload's _json is unguarded; rc_sessions._spawn kills the session on both the dead-pane and stuck-prompt paths exactly as origin/main's rc_launcher._spawn did (diffed); 141 tests incl. test_launch_fresh_after_failed_resume green
 - cost: two greps and one git show
 - unmeasured: a live tmux run of the resume-then-fresh fallback was not repeated on this build
+
+## Dropping the fixtures' own try/finally in test_desk leaks the patched os.path.islink, os.readlink and time.time into later tests because restore_globals() does not cover nested stdlib attributes
+
+- scope: `tests/_harness.py`
+- verdict: REFUTED
+- measured: 2026-09-04
+- commit: e75844ef38d3b6a99a265d66beae2edc86905428
+- oracle: tests/_harness.py _STDLIB lists (time,'time'), (os.path,'islink'), (os,'readlink'); ran tests.test_desk in a fresh interpreter and compared identities before/after: all three restored (True, True, True), islink('/proc/777/cwd') False after the suite; a keep()-as-no-op mutant is killed by two suite failures, so the restores are observed, not decorative
+- cost: one subprocess run
+- unmeasured: a cleanup registered after restore_globals() in setUp still runs while patches are live (LIFO); documented in the restore_globals docstring, not guarded

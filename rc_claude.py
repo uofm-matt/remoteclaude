@@ -1,9 +1,10 @@
 """Shared claude(1) probe: the CLAUDE binary path, the `claude auth status` contract, and MT.
 
-Imported by both rc_launcher (the login badge) and rc_healthcheck (the watchdog) so the
-external JSON contract and the default binary path have one definition instead of two that
-drift. This module depends on neither of them, so rc_healthcheck stays independent of
-rc_launcher — the watchdog still runs if the launcher is broken.
+auth_status() is read by both rc_sessions (the login badge) and rc_healthcheck (the
+watchdog) so the external JSON contract and the default binary path have one definition
+instead of two that drift; MT is the timezone every timestamp in the tree prints in.
+This module depends on nothing in the launcher tree, so rc_healthcheck stays independent
+of it — the watchdog still runs if the launcher is broken.
 """
 
 import json

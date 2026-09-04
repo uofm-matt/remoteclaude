@@ -26,9 +26,8 @@ class ConfinementTest(unittest.TestCase):
         )
 
     def test_rejects_escapes(self):
-        os.symlink(
-            tempfile.mkdtemp(), os.path.join(self.share, "esc")
-        )  # symlink out of the share
+        # symlink out of the share
+        os.symlink(tempfile.mkdtemp(), os.path.join(self.share, "esc"))
         for rel in (
             "/../../etc/passwd",
             "/%2e%2e/x",
@@ -41,9 +40,8 @@ class ConfinementTest(unittest.TestCase):
     def test_within_share_sibling_prefix(self):
         self.assertTrue(rc_share.within_share(self.share))
         self.assertTrue(rc_share.within_share(os.path.join(self.share, "deep", "x")))
-        self.assertFalse(
-            rc_share.within_share(self.share + "-evil")
-        )  # startswith w/o sep would pass
+        # startswith w/o sep would pass
+        self.assertFalse(rc_share.within_share(self.share + "-evil"))
 
 
 if __name__ == "__main__":

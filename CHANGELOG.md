@@ -4,6 +4,28 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-04
 
+- Gate on the quality pass: the defect subagent caught the one weakening in it — the
+  `lambda *_` stub that vulture's unused-`addr` hint produced no longer pinned that
+  `Server.handle_error` forwards exactly `(request, client_address)` to `super()`; the stub
+  records the pair again and the test asserts it (mutant `super().handle_error(request)`
+  killed). `restore_globals`'s docstring now says its restores run LAST (addCleanup is
+  LIFO), the ordering hazard the pass exposed by dropping two fixtures' own `try/finally`.
+- Readability pass over what the rc_sessions cut left behind (comments and test
+  scaffolding only; no source expression changed, AST-verified per file). Four module
+  docstrings still named rc_launcher for jobs that moved — rc_page pointed at
+  `rc_launcher.page()`, rc_state and rc_claude listed rc_launcher as the importer, and
+  _harness never mentioned MockedToolsCase. Eight `# --- ... ---` section headers in the
+  test files described blocks that had travelled to a different file (test_desk's
+  "death_reason", test_orchestration's "_run / _pid_cwd / _alive", test_upload's "auth")
+  and are deleted; the nine accurate ones stay. 59 statements were exploded across three
+  lines only because a trailing comment defeats `ruff format`'s line fit — the comment now
+  sits above and the statement is one line, which is the reflow the 2026-09-02 audit asked
+  for "when next touching them"; rc_config's env block reads as a settings table now.
+  Three tests dropped hand-rolled save/restore of `os.path.islink`/`os.readlink`/`time.time`
+  that `restore_globals()` has covered since the cut, and nine exploded
+  `addCleanup(setattr, ...)` calls in test_hooks became `_harness.keep()`. 144 tests green
+  before and after, 12 node, ruff format + check clean.
+
 - Gate on the cut (defect pass, live oracle): the "graceful" stop never was — claude's TUI
   answers a single Ctrl-C with "Press Ctrl-C again to exit" and stays up (verified live on
   2.1.260: one C-c, or two 4s apart, leave it running; two 0.4s apart exit it), so every ✕

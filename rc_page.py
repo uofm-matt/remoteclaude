@@ -1,5 +1,5 @@
 """The launcher page: the project list, the live dots, the search box and the launch/stop
-taps. Data only — page() in rc_launcher.py fills the __PLACEHOLDER__s per request."""
+taps. Data only — rc_sessions.page() fills the __PLACEHOLDER__s per request."""
 
 from rc_templates import shared
 

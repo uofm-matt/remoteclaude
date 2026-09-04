@@ -46,17 +46,15 @@ class GitStateTest(unittest.TestCase):
         Path(path, "f.txt").write_text("x")
         g("add", "f.txt")
         g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-        g(
-            "branch", "-M", branch
-        )  # force a known branch so the parse can be asserted exactly
+        # force a known branch so the parse can be asserted exactly
+        g("branch", "-M", branch)
         return path
 
     def test_git_state_reports_exact_branch_and_dirty(self):
         path = self._git_repo("repo", branch="feat/x")
         st = rc_git._git_state("repo")
-        self.assertEqual(
-            st["b"], "feat/x"
-        )  # exact branch — a wrong prefix parse (e.g. branch.oid) fails
+        # exact branch — a wrong prefix parse (e.g. branch.oid) fails
+        self.assertEqual(st["b"], "feat/x")
         self.assertFalse(st["d"])  # clean right after the commit
         Path(path, "f.txt").write_text("changed")
         self.assertTrue(rc_git._git_state("repo")["d"])  # a tracked edit reads dirty
@@ -65,9 +63,8 @@ class GitStateTest(unittest.TestCase):
         path = self._git_repo("repo")
         self.assertFalse(rc_git._git_state("repo")["d"])  # clean baseline
         Path(path, "new.txt").write_text("z")  # untracked-only, nothing staged
-        self.assertTrue(
-            rc_git._git_state("repo")["d"]
-        )  # porcelain '?' line -> dirty, per the docstring
+        # porcelain '?' line -> dirty, per the docstring
+        self.assertTrue(rc_git._git_state("repo")["d"])
 
     def test_git_state_none_for_nonrepo(self):
         self._proj("plain")
@@ -75,12 +72,10 @@ class GitStateTest(unittest.TestCase):
 
     def test_git_state_missing_git_is_none_not_crash(self):
         self._git_repo("repo")
-        rc_config.GIT = (
-            "/nonexistent/git"  # simulate the missing binary under launchd PATH
-        )
-        self.assertIsNone(
-            rc_git._git_state("repo")
-        )  # OSError swallowed -> None, page() won't 500
+        # simulate the missing binary under launchd PATH
+        rc_config.GIT = "/nonexistent/git"
+        # OSError swallowed -> None, page() won't 500
+        self.assertIsNone(rc_git._git_state("repo"))
 
     def test_git_state_timeout_is_none_not_crash(self):
         self._git_repo("repo")
@@ -171,8 +166,6 @@ class SnapshotBranchTest(MockedToolsCase):
             "stash create": proc(stdout="\n"),
         }
         self.assertIsNone(rc_git.snapshot("proj"))
-
-    # --- _pid_cwd via /proc, takeover SIGKILL, launch logging ---
 
     def test_snapshot_returncode_only_git_calls_stay_bytes(self):
         # Gate lead: routing rev-parse/update-ref through _git() silently added text=True,

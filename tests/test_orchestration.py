@@ -32,33 +32,26 @@ class OrchestrationTest(MockedToolsCase):
         rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
         cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertTrue(resuming)
-        self.assertEqual(
-            cmd, [c, "--continue", "--remote-control", "proj"]
-        )  # exact argv
+        # exact argv
+        self.assertEqual(cmd, [c, "--continue", "--remote-control", "proj"])
         rc_config.RESUME = "fork"
         self.assertEqual(
             rc_sessions.launch_cmd("proj")[0],
             [c, "--continue", "--fork-session", "--remote-control", "proj"],
         )
-        rc_config.RESUME, rc_config.SPAWN = (
-            "off",
-            "same-dir",
-        )  # fresh same-dir -> FLAG form:
-        cmd, resuming = rc_sessions.launch_cmd("proj")  # local-first, desk-resumable
+        # fresh same-dir -> FLAG form: local-first, desk-resumable
+        rc_config.RESUME, rc_config.SPAWN = "off", "same-dir"
+        cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertFalse(resuming)
-        self.assertEqual(
-            cmd, [c, "--remote-control", "proj"]
-        )  # never the relay-only subcommand
-        rc_config.SPAWN = (
-            "worktree"  # not same-dir -> subcommand form, exact --spawn value
-        )
+        # never the relay-only subcommand
+        self.assertEqual(cmd, [c, "--remote-control", "proj"])
+        # not same-dir -> subcommand form, exact --spawn value
+        rc_config.SPAWN = "worktree"
         cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertFalse(resuming)
         self.assertEqual(
             cmd, [c, "remote-control", "--name", "proj", "--spawn", "worktree"]
         )
-
-    # --- _run / _pid_cwd / _alive ---
 
     def test_death_reason_classifies(self):
         self.responses = {"capture-pane": proc(stdout="please trust this workspace\n")}
@@ -72,8 +65,6 @@ class OrchestrationTest(MockedToolsCase):
         self.responses = {"capture-pane": proc(stdout="")}
         self.assertEqual(rc_sessions.death_reason("s"), "exited immediately")
 
-    # --- desktop_sessions / takeover ---
-
     def test_has_desk_thread_discrimination_and_cap(self):
         # The fork deciding every launch: sdk-cli (relay-only mirror) must not count,
         # cli must, and only within the first 256KiB — the cap is the 525MB-slurp guard.
@@ -82,31 +73,26 @@ class OrchestrationTest(MockedToolsCase):
         d.mkdir(parents=True)
         f = d / "s.jsonl"
         f.write_text('{"entrypoint":"sdk-cli","type":"user"}\n')
-        self.assertFalse(
-            rc_sessions.has_desk_thread("proj")
-        )  # phone-born mirror: not resumable
+        # phone-born mirror: not resumable
+        self.assertFalse(rc_sessions.has_desk_thread("proj"))
         pad = '{"type":"pad","d":"' + "z" * 100 + '"}\n'
         n_within = 200_000 // len(pad)  # marker lands ~200KB in — inside the cap
         n_beyond = 262_144 // len(pad) + 5  # pad alone already exceeds the cap
         f.write_text(pad * n_within + '{"entrypoint":"cli"}\n' + pad * 500)
-        self.assertTrue(
-            rc_sessions.has_desk_thread("proj")
-        )  # cli within 256KiB of a big file
+        # cli within 256KiB of a big file
+        self.assertTrue(rc_sessions.has_desk_thread("proj"))
         f.write_text(pad * n_beyond + '{"entrypoint":"cli"}\n')
-        self.assertFalse(
-            rc_sessions.has_desk_thread("proj")
-        )  # cli only AFTER the cap: unseen,
-        # which is the point — reading past 262144 would mean full-file slurps per tap again
+        # cli only AFTER the cap: unseen, which is the point — reading past 262144
+        # would mean full-file slurps per tap again
+        self.assertFalse(rc_sessions.has_desk_thread("proj"))
 
     def test_launch_already_running(self):
         self.responses = {"has-session": proc(returncode=0)}
         self.assertEqual(rc_sessions.launch("proj"), ("already", None))
 
     def test_launch_fresh_success(self):
-        rc_config.RESUME, rc_config.SPAWN = (
-            "off",
-            "same-dir",
-        )  # fresh path, no takeover
+        # fresh path, no takeover
+        rc_config.RESUME, rc_config.SPAWN = "off", "same-dir"
         self.responses = spawn_ok()
         # a live desk claude in the project: a FRESH launch must leave it alone (the
         # takeover guard's `resuming` condition was mutation-deletable with 127 green)
@@ -168,9 +154,8 @@ class OrchestrationTest(MockedToolsCase):
         }
         self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
         answer = next(c for c in self.calls if "send-keys" in " ".join(map(str, c)))
-        self.assertEqual(
-            answer[-2:], ["Down", "Enter"]
-        )  # full resume, not the summary default
+        # full resume, not the summary default
+        self.assertEqual(answer[-2:], ["Down", "Enter"])
 
     def test_launch_fails_loudly_on_unknown_prompt(self):
         # Any OTHER confirm-style prompt is a failed launch with the reason surfaced —
@@ -203,9 +188,8 @@ class OrchestrationTest(MockedToolsCase):
             "same-dir",
             False,
         )
-        self._seed_desk_thread(
-            "proj"
-        )  # a cli thread exists, so the resume path genuinely runs
+        # a cli thread exists, so the resume path genuinely runs
+        self._seed_desk_thread("proj")
         panes = iter(["1\n", "0\n"])  # resume _spawn dies, fresh _spawn lives
 
         def run(cmd, **kw):
@@ -224,8 +208,9 @@ class OrchestrationTest(MockedToolsCase):
         spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
         self.assertEqual(len(spawns), 2)
         self.assertIn("--continue", spawns[0])  # first attempt resumes
+        # the fallback is a FRESH flag-form launch
         self.assertEqual(
-            spawns[1],  # the fallback is a FRESH flag-form launch
+            spawns[1],
             f"{rc_sessions.CLAUDE} --remote-control proj",
         )
 
@@ -304,8 +289,6 @@ class OrchestrationTest(MockedToolsCase):
         subprocess.run = boom
         self.assertEqual(rc_tmux.running(), set())
 
-    # --- snapshot failure branches ---
-
     def test_resume_with_takeover_off_leaves_desk_sessions_alone(self):
         rc_config.RESUME, rc_config.SPAWN, rc_config.TAKEOVER = (
             "continue",
@@ -324,9 +307,8 @@ class OrchestrationTest(MockedToolsCase):
             "same-dir",
             True,
         )
-        self._seed_desk_thread(
-            "proj"
-        )  # takeover only guards a real resume; needs a cli thread
+        # takeover only guards a real resume; needs a cli thread
+        self._seed_desk_thread("proj")
         env(self, RC_SNAPSHOT="1", RC_STATE_DIR="/tmp/st")
         events = []
         rc_config.log_event = lambda *a: events.append(a)

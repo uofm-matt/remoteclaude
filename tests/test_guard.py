@@ -176,9 +176,8 @@ class SkipRulesTest(GuardHarness):
         ):
             self.assertEqual(rc_guard.main(argv), rc_guard.PROCEED, argv)
         self.assertEqual(self.calls, [])
-        self.assertFalse(
-            rc_guard.caller_controls(["fix the bug"])
-        )  # a prompt IS a session
+        # a prompt IS a session
+        self.assertFalse(rc_guard.caller_controls(["fix the bug"]))
 
     def test_no_live_session_proceeds(self):
         with _cwd("/parent/alpha"):

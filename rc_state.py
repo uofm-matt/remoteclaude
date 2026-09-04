@@ -1,8 +1,8 @@
 """Shared state vocabulary for the remote-control awareness system.
 
-The launcher (rc_launcher.py), the status reader (rc_status.py), and the Claude Code hook
-(rc_state_hook.py) all import these, so the state names, the rank, the directory, and the
-TTL can't drift apart between them. Before this was extracted, a state renamed in the
+The session cluster (rc_sessions.py), the status reader (rc_status.py), and the Claude Code
+hook (rc_state_hook.py) all import these, so the state names, the rank, the directory, and
+the TTL can't drift apart between them. Before this was extracted, a state renamed in the
 hook's event map simply fell out of the launcher's rank filter with no error.
 """
 

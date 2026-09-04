@@ -4,8 +4,10 @@ proc()/desk()/respond() are the one canned answer for the mocked subprocess worl
 tmux control calls and the pgrep/ps/lsof desk probes that six tests used to re-implement
 inline. restore_globals() snapshots every module attribute and stdlib singleton a test may
 reassign and restores it via addCleanup, so a mutated global can't leak into a later test
-regardless of run order. ServerCase is the loopback-server fixture the handler-level tests
-drive. (This file is not collected: discover only runs test*.py.)
+regardless of run order; keep() is the same restore for the one-off attributes a single
+class patches. ServerCase is the loopback-server fixture the handler-level tests drive,
+and MockedToolsCase the mocked tmux/git/pgrep world the launch and takeover paths run in.
+(This file is not collected: discover only runs test*.py.)
 """
 
 import http.client
@@ -98,10 +100,20 @@ def respond(cmd, desk_procs, responses):
     return next((r for pat, r in responses.items() if pat in key), proc())
 
 
+def keep(tc, *targets):
+    """Restore (obj, name) attributes to their current values when tc finishes — the
+    one-liner form of what restore_globals() does over its own fixed lists, for the
+    modules a single test class patches."""
+    for obj, name in targets:
+        tc.addCleanup(setattr, obj, name, getattr(obj, name))
+
+
 def restore_globals(tc):
     """Register addCleanup handlers that restore every mutable module global and rebindable
     stdlib singleton to its current value, and empty the TTL caches on both sides of the
-    test. Call first in setUp, before the test mutates them."""
+    test. Call first in setUp, before the test mutates them — which also means its
+    restores run LAST (addCleanup is LIFO): a cleanup registered after it in setUp runs
+    while the test's patches are still in place, so keep such cleanups patch-agnostic."""
     for module, names in _ATTRS.items():
         for name in names:
             tc.addCleanup(setattr, module, name, getattr(module, name))

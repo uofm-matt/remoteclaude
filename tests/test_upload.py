@@ -22,9 +22,8 @@ from tests._harness import restore_globals, TOKEN, ServerCase, share_dir
 
 class SweepTest(unittest.TestCase):
     def setUp(self):
-        restore_globals(
-            self
-        )  # SHARE must not leak a deleted tmp dir into later classes
+        # SHARE must not leak a deleted tmp dir into later classes
+        restore_globals(self)
         self.share = rc_config.SHARE = share_dir(self)
 
     def _aged(self, name: str) -> str:
@@ -167,9 +166,8 @@ class UploadTest(ServerCase):
         os.makedirs(os.path.join(self.share, "sub"))
         self.assertEqual(self.req("DELETE", "/files")[0], 403)  # the share root
         self.assertEqual(self.req("DELETE", "/files/sub")[0], 403)  # a directory
-        self.assertEqual(
-            self.req("DELETE", "/files/..%2f..%2fx")[0], 403
-        )  # a traversal escape
+        # a traversal escape
+        self.assertEqual(self.req("DELETE", "/files/..%2f..%2fx")[0], 403)
 
     def test_download_streams_file(self):
         data = b"hello world " * 50
@@ -220,9 +218,8 @@ class UploadTest(ServerCase):
     def test_upload_write_error_is_logged_not_finalized(self):
         logged: list = []
         rc_config.log_event = lambda *a: logged.append(a)
-        os.chmod(
-            self.share, 0o500
-        )  # read-only dir -> the .rcpart open() raises OSError
+        # read-only dir -> the .rcpart open() raises OSError
+        os.chmod(self.share, 0o500)
         try:
             status, hdrs, body = self.req(
                 "PUT",
@@ -244,9 +241,10 @@ class UploadTest(ServerCase):
         self.assertEqual(status, 404)
 
     def test_upload_without_total_header_finalizes(self):
+        # no X-Rc-Total -> defaults
         status, _, body = self.req(
             "PUT", "/files/nt.bin", body=b"12345", headers={"X-Rc-Offset": "0"}
-        )  # no X-Rc-Total -> defaults
+        )
         self.assertEqual(status, 200)
         self.assertTrue(json.loads(body)["done"])
         self.assertEqual(Path(self.share, "nt.bin").read_bytes(), b"12345")
@@ -279,14 +277,11 @@ class UploadTest(ServerCase):
     def test_delete_non_files_path_404(self):
         self.assertEqual(self.req("DELETE", "/nope")[0], 404)
 
-    # --- auth: the secret comparison and per-verb denial, not just presence/absence ---
-
     def test_dropped_connection_keeps_partial(self):
         # a real mid-body RST must hit the ConnectionError branch that KEEPS the .rcpart —
         # mutate that branch to os.unlink and this assertion fails (the headline resume feature).
-        pattern = (
-            bytes(range(256)) * 300
-        )  # 76800 distinctive bytes: catches stale-length/corruption
+        # 76800 distinctive bytes: catches stale-length/corruption
+        pattern = bytes(range(256)) * 300
         s = socket.create_connection(("127.0.0.1", self.port), timeout=5)
         s.sendall(
             f"PUT /files/drop.bin HTTP/1.1\r\nHost: x\r\nCookie: rc_token={TOKEN}\r\n"
@@ -294,20 +289,17 @@ class UploadTest(ServerCase):
         )
         s.sendall(pattern)  # more than one 64KB read, well short of total
         time.sleep(0.5)  # let the server read + write the first 64KB chunk
-        s.setsockopt(
-            socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
-        )  # RST on close
+        # RST on close
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
         s.close()
         time.sleep(0.5)
         _, hdrs, _ = self.req("HEAD", "/files/drop.bin")
         have = int(hdrs["x-rc-have"])
-        self.assertGreaterEqual(
-            have, 65536
-        )  # partial survived the drop (ConnectionError branch)
+        # partial survived the drop (ConnectionError branch)
+        self.assertGreaterEqual(have, 65536)
         kept = Path(self.share, "drop.bin.rcpart").read_bytes()
-        self.assertEqual(
-            kept, pattern[:have]
-        )  # exact prefix of what was sent, not garbage/stale
+        # exact prefix of what was sent, not garbage/stale
+        self.assertEqual(kept, pattern[:have])
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ filled with live data on the way out.
 import json
 import re
 from pathlib import Path
+from types import MappingProxyType
 
 _UPLOAD = (Path(__file__).parent / "rc_upload.js").read_text()
 
@@ -37,12 +38,14 @@ background:var(--bg);color:var(--fg)}
 ul{list-style:none;margin:0;padding:6px 10px 48px}"""
 
 
-_CHUNKS = {
-    "__THEME__": _THEME,
-    "__BASE__": _BASE,
-    "__PTR__": _PTR,
-    "__UPLOAD__": _UPLOAD,
-}
+_CHUNKS = MappingProxyType(
+    {
+        "__THEME__": _THEME,
+        "__BASE__": _BASE,
+        "__PTR__": _PTR,
+        "__UPLOAD__": _UPLOAD,
+    }
+)
 
 
 def shared(template: str) -> str:

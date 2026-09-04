@@ -28,9 +28,8 @@ def main() -> None:
         f.unlink(missing_ok=True)
         return
 
-    state = STATE[
-        event
-    ]  # an event the vocabulary lacks must crash, not paint "working"
+    # an event the vocabulary lacks must crash, not paint "working"
+    state = STATE[event]
     # Notification covers two very different things: a BLOCKED turn (permission
     # request, a question) and the mere "Claude is waiting for your input" idle ping
     # after a turn ends. Under bypassPermissions the idle ping is nearly the only one

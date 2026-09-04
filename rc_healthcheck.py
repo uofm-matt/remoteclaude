@@ -42,9 +42,8 @@ def notify(title: str, msg: str) -> None:
 
 
 def main() -> None:
-    state, detail = auth_status(
-        timeout=20
-    )  # the watchdog can afford a longer probe than the badge
+    # the watchdog can afford a longer probe than the badge
+    state, detail = auth_status(timeout=20)
     print(
         f"{datetime.now(MT):%Y-%m-%d %H:%M:%S} MT  login={state} {detail}".rstrip(),
         flush=True,
