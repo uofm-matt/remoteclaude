@@ -137,6 +137,10 @@ before you schedule from a stale entry: check the claim still holds, then act.
   format is not in CI and the local style says `ruff format`. Either add `ruff format --check .`
   to ci.yml after one whitespace-only commit (routed through /gate: it touches 12 files), or
   drop the local discipline. Not doing either leaves the drift growing silently.
+> **DECIDED 2026-09-02, applied 2026-09-04** — tracked: `.gitignore` un-ignores
+> `.claude/refutations.md` alone (review.toml stays private); the record is claims plus the
+> measurements that killed them, public-safe.
+
 - **Where the refutation record lives.** `refute.py` writes `.claude/refutations.md`, which
   this public repo gitignores to keep the panel address out of the tree, so the record cannot
   travel with the code. A tracked path publishes what was measured and refuted; a per-repo
@@ -259,6 +263,11 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Later — unscheduled
 
+- [ ] **`PARENT` is realpath'd since the cut; a symlinked `RC_PROJECTS_PARENT` is untested.**
+  rc_config.py — `ensure_trusted`'s `~/.claude.json` key, `has_desk_thread`'s transcript slug
+  and tmux `-c` all now use the physical path (claude keys by physical getcwd, so probably
+  right). Not live on this host. Test: symlinked PARENT → trust key equals the physical path
+  and a transcript under the physical slug is found. (Defect-pass lead, 2026-09-04.)
 - [ ] **Refresh docs/launcher.png.** Predates the session icons and desk badges (2026-08-16);
   needs a phone screenshot of the current page dropped into `docs/`. Not doable from a
   session.

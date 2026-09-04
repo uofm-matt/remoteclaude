@@ -102,9 +102,45 @@ def projects() -> list[str]:
     )
 
 
+class TTLCache[T]:
+    """One cached callable: see ttl_cached()."""
+
+    def __init__(self, fn: Callable[..., T], ttl: Callable[[], float]) -> None:
+        self._fn, self._ttl = fn, ttl
+        self._cache: dict[tuple, tuple[float, T]] = {}
+        self._lock = threading.Lock()
+        self._inflight: dict[tuple, threading.Lock] = {}  # single-flight per key
+        functools.update_wrapper(self, fn)
+
+    def __call__(self, *args) -> T:
+        # Single-flight: concurrent misses on one key wait for the first computation
+        # instead of each forking the work (the page's 5s poll fires whether or not the
+        # last one finished, so a slow scan used to fan out into parallel git forks).
+        with self._lock:
+            if (hit := self._fresh(args)) is not None:
+                return hit
+            gate = self._inflight.setdefault(args, threading.Lock())
+        with gate:
+            with self._lock:
+                if (hit := self._fresh(args)) is not None:
+                    return hit
+            value = self._fn(*args)
+            with self._lock:
+                self._cache[args] = (time.monotonic() + self._ttl(), value)
+        return value
+
+    def _fresh(self, args: tuple) -> T | None:
+        hit = self._cache.get(args)
+        return hit[1] if hit and hit[0] > time.monotonic() else None
+
+    def invalidate(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+
 def ttl_cached[T](
     ttl: Callable[[], float],
-) -> Callable[[Callable[..., T]], Callable[..., T]]:
+) -> Callable[[Callable[..., T]], TTLCache[T]]:
     """Cache the wrapped function's result per positional-argument tuple for ttl() seconds,
     with an .invalidate() that drops every entry.
 
@@ -114,27 +150,4 @@ def ttl_cached[T](
     the phone polls /status every few seconds and each of these forks a process. ttl is a
     callable, read per call, so a test can set the TTL to 0 and force a rescan.
     """
-
-    def decorate(fn: Callable[..., T]) -> Callable[..., T]:
-        cache: dict[tuple, tuple[float, T]] = {}
-        lock = threading.Lock()
-
-        @functools.wraps(fn)
-        def cached(*args) -> T:
-            now = time.monotonic()
-            with lock:
-                if (hit := cache.get(args)) and hit[0] > now:
-                    return hit[1]
-            value = fn(*args)
-            with lock:
-                cache[args] = (now + ttl(), value)
-            return value
-
-        def invalidate() -> None:
-            with lock:
-                cache.clear()
-
-        cached.invalidate = invalidate
-        return cached
-
-    return decorate
+    return lambda fn: TTLCache(fn, ttl)

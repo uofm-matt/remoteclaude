@@ -17,11 +17,14 @@ from pathlib import Path
 import rc_config
 import rc_share
 
-from tests._harness import TOKEN, ServerCase, share_dir
+from tests._harness import restore_globals, TOKEN, ServerCase, share_dir
 
 
 class SweepTest(unittest.TestCase):
     def setUp(self):
+        restore_globals(
+            self
+        )  # SHARE must not leak a deleted tmp dir into later classes
         self.share = rc_config.SHARE = share_dir(self)
 
     def _aged(self, name: str) -> str:

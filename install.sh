@@ -54,7 +54,10 @@ chmod 700 "$SHARE_DIR"
 
 # 4. register the turn-state hook (guarded by $RC_REMOTE so it only fires for
 #    phone-driven sessions) for desk-side awareness of live remote turns.
-RC_HOOK_CMD="$("$PY" "$REPO/rc_state_hook.py" --hook-command "$REPO")" "$PY" - <<'PY'
+RC_HOOK_CMD="$("$PY" "$REPO/rc_state_hook.py" --hook-command "$REPO")"
+[ -n "$RC_HOOK_CMD" ] || { echo "could not derive the hook command" >&2; exit 1; }
+export RC_HOOK_CMD
+"$PY" - <<'PY'
 import json, os
 p = os.path.expanduser("~/.claude/settings.json")
 d = json.load(open(p)) if os.path.exists(p) else {}

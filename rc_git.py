@@ -17,11 +17,17 @@ def _git(path: str, *args: str, text: bool = True, **kw) -> subprocess.Completed
     """A git call against path's work tree, output captured — the git counterpart of
     tmux(). `-C` rather than cwd= so the argv carries its own root, and no OSError
     guard: each caller decides what a missing/failing git means (_git_state drops the
-    badge, snapshot declines to checkpoint). text=False for callers that only read the
+    badge, snapshot declines to checkpoint). --no-optional-locks: `git status` otherwise
+    refreshes the index under index.lock, and now that /status polls every repo it would
+    race a desk `git add`/`commit` with "Unable to create index.lock". text=False for
+    callers that only read the
     return code: decoding is strict, and an undecodable byte in git's stderr would
     otherwise raise out of an unguarded launch()."""
     return subprocess.run(
-        [cfg.GIT, "-C", path, *args], capture_output=True, text=text, **kw
+        [cfg.GIT, "--no-optional-locks", "-C", path, *args],
+        capture_output=True,
+        text=text,
+        **kw,
     )
 
 

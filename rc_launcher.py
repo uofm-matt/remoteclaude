@@ -318,8 +318,8 @@ class Handler(BaseHTTPRequestHandler):
         cfg.log_event("delete", os.path.relpath(target, cfg.SHARE), "ok")
         self._json({"ok": True})
 
-    def log_message(self, *_):
-        pass
+    def log_message(self, format: str, *args: object) -> None:
+        pass  # access lines are logged by _send (>=400 only), not by http.server
 
 
 class Server(ThreadingHTTPServer):

@@ -118,7 +118,9 @@ dies on its own clears without a manual reload. Tapping a live row again is a
 no-op ("already live"). Rows also show *where* a project is live: **📱** means
 the launcher runs it (tmux), **🖥** means a plain desk `claude` is live there
 (auto-paired with the app; tapping the row takes it over). The **✕** closes a
-session where it lives: on a 📱 row it SIGINTs and kills the tmux session; on a
+session where it lives: on a 📱 row it sends claude the double Ctrl-C its TUI needs,
+waits for a clean exit, kills the tmux session only as a fallback, and reports "failed"
+if the session is somehow still there; on a
 🖥 row it SIGTERMs the desk claude gracefully (transcript flushed, relay
 archived, thread still resumable). Recents float to the top (localStorage).
 
@@ -198,7 +200,7 @@ the desk side. Both are opt-in — nothing sources them for you:
   (`--continue` dies with "No conversation found to continue"; a fresh launch silently
   ignores the running session). With it, the wrapper stops first and offers: **attach**
   to the running tmux session (one conversation, phone and desk both driving it),
-  **take over** (close the remote session the way `stop()` does — SIGINT so it
+  **take over** (close the remote session the way `stop()` does — double Ctrl-C so it
   deregisters from the relay and flushes its transcript — then resume the thread at the
   desk), a **separate fresh** session, or quit.
 

@@ -253,9 +253,12 @@ class OrchestrationTest(MockedToolsCase):
             ("failed", "still alive after SIGINT and kill-session"),
         )
         cmds = self._cmds()
-        sigint = next(i for i, c in enumerate(cmds) if "send-keys" in c and "C-c" in c)
+        presses = [i for i, c in enumerate(cmds) if "send-keys" in c and "C-c" in c]
         kill = next(i for i, c in enumerate(cmds) if "kill-session" in c)
-        self.assertLess(sigint, kill)  # SIGINT (relay deregister) MUST precede the kill
+        # claude's TUI needs Ctrl-C TWICE (one prints "Press Ctrl-C again to exit" and
+        # stays up — verified live on 2.1.260), both before the kill fallback
+        self.assertEqual(len(presses), 2)
+        self.assertLess(presses[-1], kill)
 
     def test_stop_reports_stopped_only_when_gone(self):
         # dies on SIGINT: no kill-session needed, and "stopped" is a confirmed fact

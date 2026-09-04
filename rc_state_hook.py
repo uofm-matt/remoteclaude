@@ -66,8 +66,13 @@ def hook_command(repo: str) -> str:
     return HOOK_COMMAND.format(repo=repo)
 
 
-if __name__ == "__main__":
-    if sys.argv[1:2] == ["--hook-command"]:
-        print(hook_command(sys.argv[2]))
+def cli(argv: list[str]) -> None:
+    """`--hook-command <repo>` prints the settings command; anything else is the hook."""
+    if argv[:1] == ["--hook-command"]:
+        print(hook_command(argv[1]))
     else:
         main()
+
+
+if __name__ == "__main__":
+    cli(sys.argv[1:])

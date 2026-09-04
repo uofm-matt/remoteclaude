@@ -52,13 +52,18 @@ def running() -> set[str]:
 def graceful_stop(sess: str, wait: float = 5.0) -> bool:
     """Close sess and report whether it is actually gone.
 
-    Graceful first: SIGINT the claude server (Ctrl-C to the pane's foreground process) so
-    it can deregister from Anthropic's relay. An abrupt kill-session sends SIGHUP, which
+    Graceful first: Ctrl-C TWICE, close together — claude's TUI answers a single one with
+    "Press Ctrl-C again to exit" and stays up (verified live on 2.1.260: one C-c, or two
+    4s apart, leave it running; two 0.4s apart exit it), so the single C-c this used to
+    send never closed anything and every stop fell through to the kill. A clean exit lets
+    claude deregister from Anthropic's relay; an abrupt kill-session sends SIGHUP, which
     the relay can't tell apart from the Mac dropping off the network — so the app keeps
     showing the session "connected" until the relay's inactivity timeout (~10 min) evicts
     it. Wait for the pane to exit on its own, kill-session only as the fallback, then
     confirm: a caller that reports "stopped" without confirming is guessing.
     """
+    tmux("send-keys", "-t", f"={sess}", "C-c")
+    time.sleep(0.3)  # inside the TUI's "again" window, outside its key-repeat debounce
     tmux("send-keys", "-t", f"={sess}", "C-c")
     deadline = time.monotonic() + wait
     while has_session(sess) and time.monotonic() < deadline:

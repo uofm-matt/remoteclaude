@@ -37,7 +37,9 @@ class GitStateTest(unittest.TestCase):
 
         def g(*a):
             subprocess.run(
-                [rc_config.GIT, "-C", path, *a], capture_output=True, check=True
+                [rc_config.GIT, "--no-optional-locks", "-C", path, *a],
+                capture_output=True,
+                check=True,
             )
 
         g("init", "-q")
@@ -136,7 +138,9 @@ class GitStateTest(unittest.TestCase):
 
         def git(*a):
             return subprocess.run(
-                ["git", "-C", path, *a], capture_output=True, text=True
+                ["git", "--no-optional-locks", "-C", path, *a],
+                capture_output=True,
+                text=True,
             )
 
         git("init", "-q")
@@ -185,7 +189,7 @@ class SnapshotBranchTest(MockedToolsCase):
         self.responses = {"stash create": proc(stdout="abc123\n")}
         env(self, RC_SNAPSHOT="1")
         rc_git.snapshot("proj")
-        modes = {c[3]: text for c, text in seen if c[0] == rc_config.GIT}
+        modes = {c[4]: text for c, text in seen if c[0] == rc_config.GIT}
         self.assertEqual(modes.get("rev-parse"), False)
         self.assertEqual(modes.get("update-ref"), False)
         self.assertEqual(modes.get("stash"), True)

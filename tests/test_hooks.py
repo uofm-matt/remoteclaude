@@ -108,11 +108,18 @@ class HookTest(unittest.TestCase):
         self.assertEqual(
             cmd, '[ -n "$RC_REMOTE" ] && python3 /r/rc_state_hook.py; true'
         )
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc_state_hook.cli(["--hook-command", "/r"])  # what install.sh actually runs
+        self.assertEqual(buf.getvalue().strip(), cmd)
         root = Path(rc_state_hook.__file__).parent
         for script in ("install.sh", "uninstall.sh"):
             text = (root / script).read_text()
             self.assertNotIn("rc_state_hook.py; true", text, script)
             self.assertIn("--hook-command", text, script)
+        # a failing substitution in a prefix assignment escapes `set -e`; the guard is
+        # what keeps an empty command out of six hook entries
+        self.assertIn('[ -n "$RC_HOOK_CMD" ]', (root / "install.sh").read_text())
 
     def test_unknown_event_fails_loud(self):
         # an event the vocabulary lacks used to paint "working"; it must crash instead

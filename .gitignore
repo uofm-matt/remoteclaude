@@ -3,7 +3,10 @@ __pycache__/
 .coverage
 coverage.json
 .ruff_cache/
-.claude/
+# .claude/ is private (review.toml carries the panel address) except the refutation record,
+# which travels with the code (decision 2026-09-02): claims plus the measurements that killed them
+.claude/*
+!.claude/refutations.md
 uv.lock
 
 # local planning/findings docs — carry private lab topology + home paths, never commit to the public repo

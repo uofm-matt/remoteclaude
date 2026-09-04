@@ -77,6 +77,9 @@ class RouteTest(ServerCase):
         os.makedirs(rc_config.PARENT)
         rc_sessions.STATE_DIR = Path(self.aux, "state")
         rc_config.CLAUDE_JSON = os.path.join(self.aux, "claude.json")
+        rc_config.CLAUDE_PROJECTS = Path(
+            self.aux, "claude-projects"
+        )  # never the host's
         Path(rc_config.CLAUDE_JSON).write_text("{}")
         self.responses: dict = {}
         self.desk: dict = {}
@@ -163,6 +166,23 @@ class RouteTest(ServerCase):
         self.assertNotIn((321, signal.SIGKILL), killed)
         joined = [" ".join(map(str, c)) for c in calls]
         self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
+
+    def test_stop_route_reports_failed_when_the_session_survives(self):
+        # the contract stopSess keys on: a session still alive after the double C-c
+        # and the kill is "failed" with a reason, so the page keeps the dot and toasts
+        os.makedirs(os.path.join(rc_config.PARENT, "p"))
+        rc_config.STOP_WAIT = 0
+        self.responses = {"has-session": proc(returncode=0)}
+        status, body = self.get("/stop?proj=p&json=1")
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            json.loads(body),
+            {
+                "status": "failed",
+                "proj": "p",
+                "reason": "still alive after SIGINT and kill-session",
+            },
+        )
 
     def test_launch_ignores_the_desk_flag(self):
         # desk=1 only means something on /stop; on /launch it must launch, not desk-stop

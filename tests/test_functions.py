@@ -10,6 +10,7 @@ import os
 import shutil
 import socketserver
 import tempfile
+import threading
 import time
 import unittest
 from contextlib import redirect_stdout
@@ -25,7 +26,7 @@ import rc_state
 import rc_templates
 import rc_tmux
 
-from tests._harness import restore_globals
+from tests._harness import env, restore_globals
 
 _REAL_LOG = rc_config.log_event  # captured before any test stubs it
 
@@ -131,6 +132,48 @@ class FunctionTest(unittest.TestCase):
         ).decode()
         self.assertIn('<a href="/files/my%20file">my file</a>', page)
         self.assertNotIn("%2520", page)
+
+    def test_ttl_cached_is_single_flight_under_concurrent_misses(self):
+        # two threads missing the same key at once must produce ONE computation — the
+        # page's 5s poll fires whether or not the last one finished, so without this a
+        # slow scan fanned out into parallel git forks per repo
+        started, release, calls = threading.Event(), threading.Event(), []
+
+        @rc_config.ttl_cached(lambda: 60.0)
+        def slow(key):
+            calls.append(key)
+            started.set()
+            release.wait(2)
+            return key
+
+        results = []
+        t1 = threading.Thread(target=lambda: results.append(slow("k")))
+        t2 = threading.Thread(target=lambda: results.append(slow("k")))
+        t1.start()
+        started.wait(2)
+        t2.start()
+        release.set()
+        t1.join(2)
+        t2.join(2)
+        self.assertEqual(results, ["k", "k"])
+        self.assertEqual(calls, ["k"])
+        slow.invalidate()
+        slow("k")
+        self.assertEqual(calls, ["k", "k"])
+
+    def test_git_ttl_default_is_thirty_seconds(self):
+        # raised 15 -> 30 on 2026-09-04 when /status started driving it; pinned so a
+        # silent revert (or a silent bump) shows up here
+        self.assertEqual(rc_config.GIT_TTL, float(os.environ.get("RC_GIT_TTL", "30")))
+
+    def test_read_token_without_a_file_is_empty_not_env(self):
+        # no file -> "" (main() then refuses to start); there is no env fallback any more
+        env(
+            self,
+            RC_LAUNCHER_TOKEN_FILE=os.path.join(self.tmp, "nope"),
+            RC_LAUNCHER_TOKEN="should-be-ignored",
+        )
+        self.assertEqual(rc_config._read_token(), "")
 
     def test_rows_html_carries_sort_keys_dirs_first(self):
         share = os.path.realpath(os.path.join(self.tmp, "share"))

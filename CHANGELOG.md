@@ -4,6 +4,18 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-04
 
+- Gate on the cut (defect pass, live oracle): the "graceful" stop never was — claude's TUI
+  answers a single Ctrl-C with "Press Ctrl-C again to exit" and stays up (verified live on
+  2.1.260: one C-c, or two 4s apart, leave it running; two 0.4s apart exit it), so every ✕
+  since the first commit fell through to the SIGHUP kill the docstring said it avoided.
+  `graceful_stop` sends the double Ctrl-C now. Also from that pass: `git status` in the
+  poll took `index.lock` and would race a desk `git add` — `--no-optional-locks` on every
+  launcher git call; `ttl_cached` is single-flight (concurrent misses on a key wait for one
+  computation instead of each forking); install.sh's hook-command substitution could fail
+  silently under `set -e` (prefix assignments escape errexit) and register six empty
+  commands — assigned and checked on its own line; `RC_GIT_TTL`'s new 30s default and the
+  `/stop` "failed" payload are pinned at the route; two test classes gained the isolation
+  the rest have. Panel: 2 of 3 models, both leads refuted by inspection and recorded.
 - `stop()` confirms: it now runs `rc_tmux.graceful_stop()` (SIGINT, wait up to
   `RC_STOP_WAIT`, kill-session only as fallback, then check) and answers "failed" with a
   reason when the session is still alive — the ✕ used to say "stopped" after a 2s sleep
