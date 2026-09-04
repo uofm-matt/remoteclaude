@@ -27,13 +27,37 @@ TAKEOVER_WAIT = 5.0  # seconds to let claude exit on SIGINT before kill-session
 
 PROCEED, ABORT, FRESH = 0, 1, 2
 # The caller already chose a session, or isn't starting one: never second-guess.
-CALLER_CONTROLS = frozenset({"-c", "--continue", "-r", "--resume", "-p", "--print",
-                             "--new", "-v", "--version", "-h", "--help"})
+CALLER_CONTROLS = frozenset(
+    {
+        "-c",
+        "--continue",
+        "-r",
+        "--resume",
+        "-p",
+        "--print",
+        "--new",
+        "-v",
+        "--version",
+        "-h",
+        "--help",
+    }
+)
 CALLER_CONTROL_PREFIXES = ("--resume=", "--session-id")
 # Subcommands that never open a conversation thread.
-NON_SESSION_SUBCOMMANDS = frozenset({"mcp", "update", "doctor", "auth", "plugin",
-                                     "install", "config", "agents", "setup-token",
-                                     "migrate-installer"})
+NON_SESSION_SUBCOMMANDS = frozenset(
+    {
+        "mcp",
+        "update",
+        "doctor",
+        "auth",
+        "plugin",
+        "install",
+        "config",
+        "agents",
+        "setup-token",
+        "migrate-installer",
+    }
+)
 
 
 def caller_controls(argv: list[str]) -> bool:
@@ -64,8 +88,10 @@ def live_sess(cwd: str, parent: str) -> str | None:
     candidates = [os.path.realpath(cwd)]
     if (pwd := os.environ.get("PWD")) and _same_dir(pwd, cwd):
         candidates.insert(0, os.path.normpath(pwd))
-    parents = {os.path.join(p, "")
-               for p in (os.path.realpath(parent), os.path.normpath(parent))}
+    parents = {
+        os.path.join(p, "")
+        for p in (os.path.realpath(parent), os.path.normpath(parent))
+    }
     hit = next(((c, p) for c in candidates for p in parents if c.startswith(p)), None)
     if hit is None:
         return None
@@ -97,8 +123,12 @@ def state_tag() -> str:
     (or a hung state dir keeps it from saying anything within 2s)."""
     here = os.path.dirname(os.path.abspath(__file__))
     with contextlib.suppress(subprocess.TimeoutExpired):
-        r = subprocess.run([sys.executable, os.path.join(here, "rc_status.py")],
-                           capture_output=True, text=True, timeout=2)
+        r = subprocess.run(
+            [sys.executable, os.path.join(here, "rc_status.py")],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
         return r.stdout.strip()
     return ""
 
@@ -123,8 +153,10 @@ def takeover(sess: str) -> int:
     if session_alive(sess):
         subprocess.run([TMUX, "kill-session", "-t", f"={sess}"], capture_output=True)
     if session_alive(sess):
-        print(f"{sess} is still alive after SIGINT and kill-session; not launching.",
-              file=sys.stderr)
+        print(
+            f"{sess} is still alive after SIGINT and kill-session; not launching.",
+            file=sys.stderr,
+        )
         return ABORT
     return PROCEED
 

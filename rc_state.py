@@ -19,13 +19,15 @@ STATE_TTL = float(os.environ.get("RC_STATE_TTL", "3600"))
 RANK = MappingProxyType({"working": 3, "waiting": 2, "idle": 1})
 
 # Claude Code hook event -> turn state (every value must be a RANK key)
-EVENT_STATE = MappingProxyType({
-    "UserPromptSubmit": "working",
-    "Notification": "waiting",
-    "Stop": "idle",
-    "SubagentStop": "idle",
-    "SessionStart": "idle",
-})
+EVENT_STATE = MappingProxyType(
+    {
+        "UserPromptSubmit": "working",
+        "Notification": "waiting",
+        "Stop": "idle",
+        "SubagentStop": "idle",
+        "SessionStart": "idle",
+    }
+)
 
 
 def valid_states(state_dir: Path, now: float | None = None) -> list[dict]:

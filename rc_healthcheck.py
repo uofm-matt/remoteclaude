@@ -34,15 +34,21 @@ def notify(title: str, msg: str) -> None:
     elif shutil.which("notify-send"):
         subprocess.run(["notify-send", title, msg], capture_output=True)
     if NOTIFY_URL:
-        req = urllib.request.Request(NOTIFY_URL, data=msg.encode(), headers={"Title": title})
+        req = urllib.request.Request(
+            NOTIFY_URL, data=msg.encode(), headers={"Title": title}
+        )
         with contextlib.suppress(OSError):
             urllib.request.urlopen(req, timeout=10)
 
 
 def main() -> None:
-    state, detail = auth_status(timeout=20)  # the watchdog can afford a longer probe than the badge
-    print(f"{datetime.now(MT):%Y-%m-%d %H:%M:%S} MT  login={state} {detail}".rstrip(),
-          flush=True)
+    state, detail = auth_status(
+        timeout=20
+    )  # the watchdog can afford a longer probe than the badge
+    print(
+        f"{datetime.now(MT):%Y-%m-%d %H:%M:%S} MT  login={state} {detail}".rstrip(),
+        flush=True,
+    )
     if state != "ok":
         notify(
             "RC launcher: login problem",

@@ -20,17 +20,29 @@ class ConfinementTest(unittest.TestCase):
     def test_allows_inside(self):
         open(os.path.join(self.share, "a.txt"), "w").close()
         self.assertEqual(rc_launcher.share_target(""), self.share)
-        self.assertEqual(rc_launcher.share_target("/a.txt"), os.path.join(self.share, "a.txt"))
+        self.assertEqual(
+            rc_launcher.share_target("/a.txt"), os.path.join(self.share, "a.txt")
+        )
 
     def test_rejects_escapes(self):
-        os.symlink(tempfile.mkdtemp(), os.path.join(self.share, "esc"))  # symlink out of the share
-        for rel in ("/../../etc/passwd", "/%2e%2e/x", "/esc/secret", "/\x00", "/..%2f..%2fetc"):
+        os.symlink(
+            tempfile.mkdtemp(), os.path.join(self.share, "esc")
+        )  # symlink out of the share
+        for rel in (
+            "/../../etc/passwd",
+            "/%2e%2e/x",
+            "/esc/secret",
+            "/\x00",
+            "/..%2f..%2fetc",
+        ):
             self.assertIsNone(rc_launcher.share_target(rel), rel)
 
     def test_within_share_sibling_prefix(self):
         self.assertTrue(rc_launcher.within_share(self.share))
         self.assertTrue(rc_launcher.within_share(os.path.join(self.share, "deep", "x")))
-        self.assertFalse(rc_launcher.within_share(self.share + "-evil"))  # startswith w/o sep would pass
+        self.assertFalse(
+            rc_launcher.within_share(self.share + "-evil")
+        )  # startswith w/o sep would pass
 
 
 if __name__ == "__main__":

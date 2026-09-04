@@ -104,6 +104,9 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Decisions — operator's call, not backlog
 
+> **DECIDED 2026-09-04** — adopted: whole repo formatted (13 files, every tracked module
+> AST-identical before/after), `ruff format --check .` added to ci.yml.
+
 - **`ruff format` gate.** 12 of 22 .py files (6 of 8 shipped modules) would be reformatted;
   format is not in CI and the local style says `ruff format`. Either add `ruff format --check .`
   to ci.yml after one whitespace-only commit (routed through /gate: it touches 12 files), or

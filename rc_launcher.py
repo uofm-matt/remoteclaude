@@ -50,8 +50,11 @@ def _read_token() -> str:
     """Auth token, file-first (the 0600 file install.sh writes) with the env as fallback.
     The service files stopped carrying the secret, so `launchctl print` / `systemctl show`
     can't leak it and rotation is write-file + kickstart, no plist surgery."""
-    tf = Path(os.path.expanduser(
-        os.environ.get("RC_LAUNCHER_TOKEN_FILE", "~/.config/rc-launcher/token")))
+    tf = Path(
+        os.path.expanduser(
+            os.environ.get("RC_LAUNCHER_TOKEN_FILE", "~/.config/rc-launcher/token")
+        )
+    )
     with contextlib.suppress(OSError):
         return tf.read_text().strip()
     return os.environ.get("RC_LAUNCHER_TOKEN", "")
@@ -65,20 +68,32 @@ RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
 TAKEOVER = os.environ.get("RC_TAKEOVER", "1") not in ("0", "off", "")
 HOST = socket.gethostname().split(".")[0]
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")
-CLAUDE_PROJECTS = Path(os.path.expanduser("~/.claude/projects"))  # per-project transcripts
-SHARE = os.path.realpath(os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc-share")))
+CLAUDE_PROJECTS = Path(
+    os.path.expanduser("~/.claude/projects")
+)  # per-project transcripts
+SHARE = os.path.realpath(
+    os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc-share"))
+)
 RCPART_TTL = 6 * 3600  # abandoned .rcpart uploads (no writes in this long) get swept
-GIT_TTL = float(os.environ.get("RC_GIT_TTL", "15"))  # per-project git state is cached this long
-GIT_STATUS_TIMEOUT = float(os.environ.get("RC_GIT_STATUS_TIMEOUT", "3"))  # cap a hung `git status`
-DESK_TTL = float(os.environ.get("RC_DESK_TTL", "10"))  # desk-session scan is cached this long
+GIT_TTL = float(
+    os.environ.get("RC_GIT_TTL", "15")
+)  # per-project git state is cached this long
+GIT_STATUS_TIMEOUT = float(
+    os.environ.get("RC_GIT_STATUS_TIMEOUT", "3")
+)  # cap a hung `git status`
+DESK_TTL = float(
+    os.environ.get("RC_DESK_TTL", "10")
+)  # desk-session scan is cached this long
 
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def log_event(action: str, proj: str, result: str) -> None:
     """One audit line per launch/stop to StandardOutPath (/tmp/rc-launcher.log)."""
-    print(f"{datetime.now(MT):%Y-%m-%d %H:%M:%S} MT  {action:<6} {proj} -> {result}",
-          flush=True)
+    print(
+        f"{datetime.now(MT):%Y-%m-%d %H:%M:%S} MT  {action:<6} {proj} -> {result}",
+        flush=True,
+    )
 
 
 @functools.lru_cache(maxsize=1)
@@ -108,7 +123,9 @@ def ensure_trusted(proj: str) -> None:
     except FileNotFoundError:
         return  # no ~/.claude.json yet — nothing to pre-trust
     except (OSError, json.JSONDecodeError) as e:
-        log_event("trust", proj, f"skip: {e}")  # unreadable/corrupt: surface it, don't 500 the launch
+        log_event(
+            "trust", proj, f"skip: {e}"
+        )  # unreadable/corrupt: surface it, don't 500 the launch
         return
     entry = d.setdefault("projects", {}).setdefault(key, {})
     if entry.get("hasTrustDialogAccepted"):
@@ -127,7 +144,8 @@ def projects() -> list[str]:
     except FileNotFoundError:
         return []
     return sorted(
-        e for e in entries
+        e
+        for e in entries
         if NAME_RE.match(e) and os.path.isdir(os.path.join(PARENT, e))
     )
 
@@ -143,8 +161,9 @@ def _git(path: str, *args: str, text: bool = True, **kw) -> subprocess.Completed
     badge, snapshot declines to checkpoint). text=False for callers that only read the
     return code: decoding is strict, and an undecodable byte in git's stderr would
     otherwise raise out of an unguarded launch()."""
-    return subprocess.run([GIT, "-C", path, *args],
-                          capture_output=True, text=text, **kw)
+    return subprocess.run(
+        [GIT, "-C", path, *args], capture_output=True, text=text, **kw
+    )
 
 
 def _git_state(proj: str) -> dict | None:
@@ -153,8 +172,9 @@ def _git_state(proj: str) -> dict | None:
     branch; any non-'#' line (a tracked change or an untracked file) means the tree is dirty."""
     path = os.path.join(PARENT, proj)
     try:
-        out = _git(path, "status", "--porcelain=v2", "--branch",
-                   timeout=GIT_STATUS_TIMEOUT)
+        out = _git(
+            path, "status", "--porcelain=v2", "--branch", timeout=GIT_STATUS_TIMEOUT
+        )
     except (OSError, subprocess.TimeoutExpired):
         # git missing under the minimal launchd PATH, or a hung/slow repo (index.lock, slow
         # disk): drop the badge rather than block a page() worker forever. TimeoutExpired is
@@ -163,8 +183,14 @@ def _git_state(proj: str) -> dict | None:
     if out.returncode:  # not a work tree (or a git error) — treat as "no git info"
         return None
     lines = out.stdout.splitlines()
-    branch = next((ln.removeprefix("# branch.head ") for ln in lines
-                   if ln.startswith("# branch.head ")), "")
+    branch = next(
+        (
+            ln.removeprefix("# branch.head ")
+            for ln in lines
+            if ln.startswith("# branch.head ")
+        ),
+        "",
+    )
     return {"b": branch, "d": any(ln and not ln.startswith("#") for ln in lines)}
 
 
@@ -189,7 +215,11 @@ def git_states(projs: list[str] | None = None) -> dict[str, dict]:
     if not projs:
         return {}
     with ThreadPoolExecutor(max_workers=8) as ex:
-        return {p: s for p, s in zip(projs, ex.map(_git_state_cached, projs), strict=True) if s}
+        return {
+            p: s
+            for p, s in zip(projs, ex.map(_git_state_cached, projs), strict=True)
+            if s
+        }
 
 
 def _tmux(*args: str) -> subprocess.CompletedProcess[str]:
@@ -207,8 +237,9 @@ def running() -> set[str]:
         out = _tmux("list-sessions", "-F", "#{session_name}").stdout
     except FileNotFoundError:  # tmux not installed yet; status is non-essential
         return set()
-    return {line.removeprefix("rc-") for line in out.splitlines()
-            if line.startswith("rc-")}
+    return {
+        line.removeprefix("rc-") for line in out.splitlines() if line.startswith("rc-")
+    }
 
 
 def session_states() -> dict[str, str]:
@@ -216,7 +247,10 @@ def session_states() -> dict[str, str]:
     so the UI can show working/waiting, not just live. Stale files are ignored."""
     out: dict[str, str] = {}
     for d in valid_states(STATE_DIR):
-        proj, st = d.get("project") or "", d["state"]  # st is already a RANK key (valid_states)
+        proj, st = (
+            d.get("project") or "",
+            d["state"],
+        )  # st is already a RANK key (valid_states)
         if proj and _RANK[st] > _RANK.get(out.get(proj, ""), 0):
             out[proj] = st
     return out
@@ -225,8 +259,14 @@ def session_states() -> dict[str, str]:
 def death_reason(sess: str) -> str:
     """Why a just-launched RC session died, read from its dead pane."""
     out = _tmux("capture-pane", "-t", f"={sess}", "-p").stdout
-    last = next((s for ln in reversed(out.splitlines())
-                 if (s := ln.strip()) and not s.startswith("Pane is dead")), "")
+    last = next(
+        (
+            s
+            for ln in reversed(out.splitlines())
+            if (s := ln.strip()) and not s.startswith("Pane is dead")
+        ),
+        "",
+    )
     low = last.lower()
     if "trust" in low:
         return "untrusted dir"
@@ -316,8 +356,11 @@ def desktop_sessions(proj: str) -> list[int]:
     resuming remote session would collide with. Scoped by cwd, so sessions for any
     other project are never touched."""
     root = os.path.join(PARENT, proj)
-    return [pid for pid, cwd in _desk_claude_pids()
-            if cwd == root or cwd.startswith(root + os.sep)]
+    return [
+        pid
+        for pid, cwd in _desk_claude_pids()
+        if cwd == root or cwd.startswith(root + os.sep)
+    ]
 
 
 _desk_lock = threading.Lock()
@@ -331,8 +374,13 @@ def _desk_scan() -> list[str]:
     as the signal: live desk sessions don't reliably write one, and stale ones point
     at dead pids.)"""
     root = PARENT + os.sep
-    return sorted({cwd.removeprefix(root).split(os.sep)[0]
-                   for _, cwd in _desk_claude_pids() if cwd.startswith(root)})
+    return sorted(
+        {
+            cwd.removeprefix(root).split(os.sep)[0]
+            for _, cwd in _desk_claude_pids()
+            if cwd.startswith(root)
+        }
+    )
 
 
 def _desk_invalidate() -> None:
@@ -425,9 +473,11 @@ def launch_cmd(proj: str) -> tuple[list[str], bool]:
 # Interactive-prompt policy: pane sentinel -> (keys to answer with, audit-log note).
 # This is PRODUCT policy (the owner's standing "never compact, always full resume"
 # choice), kept as data so the next claude prompt is a table row, not a _spawn rewrite.
-_PROMPT_ANSWERS = MappingProxyType({
-    "Resume from summary": (("Down", "Enter"), "auto-confirmed FULL resume"),
-})
+_PROMPT_ANSWERS = MappingProxyType(
+    {
+        "Resume from summary": (("Down", "Enter"), "auto-confirmed FULL resume"),
+    }
+)
 
 
 def _settle_prompt(sess: str, proj: str) -> str:
@@ -457,8 +507,17 @@ def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
     nothing to --continue — taking its tmux session with it; remain-on-exit
     holds the dead pane so death_reason can read WHY."""
     subprocess.run(
-        [TMUX, "new-session", "-d", "-s", sess, *env_opts,
-         "-c", os.path.join(PARENT, proj), " ".join(cmd)],
+        [
+            TMUX,
+            "new-session",
+            "-d",
+            "-s",
+            sess,
+            *env_opts,
+            "-c",
+            os.path.join(PARENT, proj),
+            " ".join(cmd),
+        ],
         check=False,
     )
     _tmux("set-option", "-t", f"={sess}", "remain-on-exit", "on")
@@ -491,10 +550,17 @@ def launch(proj: str) -> tuple[str, str | None]:
     # is non-deterministic; -e is order-immune and carries to the future systemd host.
     # Without ~/.local/bin, MCP servers and hooks claude spawns by name (uvx, uv,
     # ruff) fail on phone-launched sessions while working at the desk.
-    env_opts = ["-e", f"RC_REMOTE={sess}", "-e", f"RC_PROJECT={proj}",
-                "-e", f"RC_SHARE_DIR={SHARE}",
-                "-e", f"PATH={os.path.expanduser('~/.local/bin')}:"
-                      f"{os.environ.get('PATH', '/usr/bin:/bin')}"]
+    env_opts = [
+        "-e",
+        f"RC_REMOTE={sess}",
+        "-e",
+        f"RC_PROJECT={proj}",
+        "-e",
+        f"RC_SHARE_DIR={SHARE}",
+        "-e",
+        f"PATH={os.path.expanduser('~/.local/bin')}:"
+        f"{os.environ.get('PATH', '/usr/bin:/bin')}",
+    ]
     if os.environ.get("RC_STATE_DIR"):
         env_opts += ["-e", f"RC_STATE_DIR={os.environ['RC_STATE_DIR']}"]
     cmd, resuming = launch_cmd(proj)
@@ -580,16 +646,21 @@ def _fill(template: str, values: dict[str, str]) -> bytes:
 
 
 def page() -> bytes:
-    projs = projects()  # computed once and shared with git_states so PARENT is scanned once
-    return _fill(PAGE, {
-        "__PROJECTS__": js(projs),
-        "__RUNNING__": js(sorted(running())),
-        "__STATES__": js(session_states()),
-        "__GITSTATES__": js(git_states(projs)),
-        "__DESK__": js(desk_projects()),
-        "__LOGIN__": js(login_status()),
-        "__HOST__": html.escape(HOST),
-    })
+    projs = (
+        projects()
+    )  # computed once and shared with git_states so PARENT is scanned once
+    return _fill(
+        PAGE,
+        {
+            "__PROJECTS__": js(projs),
+            "__RUNNING__": js(sorted(running())),
+            "__STATES__": js(session_states()),
+            "__GITSTATES__": js(git_states(projs)),
+            "__DESK__": js(desk_projects()),
+            "__LOGIN__": js(login_status()),
+            "__HOST__": html.escape(HOST),
+        },
+    )
 
 
 def human_size(n: float) -> str:
@@ -610,7 +681,7 @@ def crumb_html(rel: str) -> str:
         seg_dec = unquote(seg)
         acc += "/" + quote(seg_dec)
         out.append(f'<a href="/files{acc}">{html.escape(seg_dec)}</a>')
-    return '<span class=sep>/</span>'.join(out)
+    return "<span class=sep>/</span>".join(out)
 
 
 def rows_html(target: str, rel: str) -> str:
@@ -621,7 +692,7 @@ def rows_html(target: str, rel: str) -> str:
     try:
         names = sorted(os.listdir(target))
     except OSError:
-        return '<li class=empty>empty</li>'
+        return "<li class=empty>empty</li>"
     base = rel.rstrip("/")
     dirs, files = [], []
     for name in names:
@@ -636,28 +707,39 @@ def rows_html(target: str, rel: str) -> str:
         except OSError:
             continue
         href = f"/files{base}/{quote(name)}"
-        is_dir = stat.S_ISDIR(st.st_mode)  # from the stat above; os.stat followed symlinks too
-        data = (f'data-d="{int(is_dir)}" data-n="{html.escape(name.lower(), quote=True)}" '
-                f'data-s="{st.st_size}" data-t="{int(st.st_mtime)}"')
+        is_dir = stat.S_ISDIR(
+            st.st_mode
+        )  # from the stat above; os.stat followed symlinks too
+        data = (
+            f'data-d="{int(is_dir)}" data-n="{html.escape(name.lower(), quote=True)}" '
+            f'data-s="{st.st_size}" data-t="{int(st.st_mtime)}"'
+        )
         if is_dir:
-            dirs.append(f'<li class=dir {data}><a href="{href}">'
-                        f'<span class=nm>{html.escape(name)}/</span></a></li>')
+            dirs.append(
+                f'<li class=dir {data}><a href="{href}">'
+                f"<span class=nm>{html.escape(name)}/</span></a></li>"
+            )
         else:
             when = f"{datetime.fromtimestamp(st.st_mtime, MT):%m/%d %H:%M}"
-            files.append(f'<li {data}><a href="{href}"><span class=nm>{html.escape(name)}'
-                         f'</span><span class=meta>{human_size(st.st_size)} &middot; '
-                         f'{when}</span></a></li>')
+            files.append(
+                f'<li {data}><a href="{href}"><span class=nm>{html.escape(name)}'
+                f"</span><span class=meta>{human_size(st.st_size)} &middot; "
+                f"{when}</span></a></li>"
+            )
     rows = dirs + files
-    return "\n".join(rows) if rows else '<li class=empty>empty</li>'
+    return "\n".join(rows) if rows else "<li class=empty>empty</li>"
 
 
 def share_page(target: str, rel: str) -> bytes:
-    return _fill(FILES_PAGE, {
-        "__REL__": js(rel.rstrip("/")),
-        "__HOST__": html.escape(HOST),
-        "__CRUMB__": crumb_html(rel),
-        "__ROWS__": rows_html(target, rel),
-    })
+    return _fill(
+        FILES_PAGE,
+        {
+            "__REL__": js(rel.rstrip("/")),
+            "__HOST__": html.escape(HOST),
+            "__CRUMB__": crumb_html(rel),
+            "__ROWS__": rows_html(target, rel),
+        },
+    )
 
 
 def within_share(p: str) -> bool:
@@ -685,8 +767,12 @@ def sweep_rcparts() -> int:
     Keyed on mtime, so an in-progress or actively-resuming upload — which keeps writing —
     is never swept. Returns how many were removed."""
     cutoff = time.time() - RCPART_TTL
-    parts = (os.path.join(root, name) for root, _, files in os.walk(SHARE)
-             for name in files if name.endswith(".rcpart"))
+    parts = (
+        os.path.join(root, name)
+        for root, _, files in os.walk(SHARE)
+        for name in files
+        if name.endswith(".rcpart")
+    )
     n = 0
     for p in parts:
         with contextlib.suppress(OSError):
@@ -717,9 +803,17 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     timeout = 60
 
-    def _send(self, code: int, body: bytes, ctype: str = "text/html; charset=utf-8",
-              set_cookie: bool = False, close: bool = False):
-        if code >= 400:  # non-2xx used to be invisible (log_message is silenced) — trace it.
+    def _send(
+        self,
+        code: int,
+        body: bytes,
+        ctype: str = "text/html; charset=utf-8",
+        set_cookie: bool = False,
+        close: bool = False,
+    ):
+        if (
+            code >= 400
+        ):  # non-2xx used to be invisible (log_message is silenced) — trace it.
             # Path only, never the query: the app's uploads carry ?token=, and a failed
             # request would otherwise write the live token into the world-readable log.
             log_event("http", f"{self.command} {urlparse(self.path).path}", str(code))
@@ -731,7 +825,9 @@ class Handler(BaseHTTPRequestHandler):
                 "Set-Cookie",
                 f"rc_token={TOKEN}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000",
             )
-        if close:  # a bail-out that never read the request body must end the connection,
+        if (
+            close
+        ):  # a bail-out that never read the request body must end the connection,
             self.close_connection = True  # or that unread body desyncs the next request
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -761,7 +857,9 @@ class Handler(BaseHTTPRequestHandler):
         if hmac.compare_digest(q.get("token", [""])[0], TOKEN):
             return True
         cookie = SimpleCookie(self.headers.get("Cookie", ""))
-        return "rc_token" in cookie and hmac.compare_digest(cookie["rc_token"].value, TOKEN)
+        return "rc_token" in cookie and hmac.compare_digest(
+            cookie["rc_token"].value, TOKEN
+        )
 
     def _files(self, path: str):
         """Read-only browse/download under SHARE, behind the same token gate.
@@ -781,14 +879,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def _stream_file(self, target: str):
         self.send_response(200)
-        self.send_header("Content-Type",
-                         mimetypes.guess_type(target)[0] or "application/octet-stream")
+        self.send_header(
+            "Content-Type",
+            mimetypes.guess_type(target)[0] or "application/octet-stream",
+        )
         self.send_header("Content-Length", str(os.path.getsize(target)))
-        self.send_header("Content-Disposition",
-                         f"inline; filename*=UTF-8''{quote(os.path.basename(target))}")
+        self.send_header(
+            "Content-Disposition",
+            f"inline; filename*=UTF-8''{quote(os.path.basename(target))}",
+        )
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        with contextlib.suppress(BrokenPipeError, ConnectionResetError), open(target, "rb") as f:
+        with (
+            contextlib.suppress(BrokenPipeError, ConnectionResetError),
+            open(target, "rb") as f,
+        ):
             shutil.copyfileobj(f, self.wfile, 65536)
 
     def _part(self, path: str, rid: str = "") -> tuple[str | None, str]:
@@ -801,7 +906,11 @@ class Handler(BaseHTTPRequestHandler):
             return None, ""
         # sha1 tags the .rcpart temp by X-Rc-Id — a filename key, not a security digest, so
         # usedforsecurity=False (unchanged output, and it works on FIPS-restricted hosts).
-        tag = f".{hashlib.sha1(rid.encode(), usedforsecurity=False).hexdigest()[:12]}" if rid else ""
+        tag = (
+            f".{hashlib.sha1(rid.encode(), usedforsecurity=False).hexdigest()[:12]}"
+            if rid
+            else ""
+        )
         return target, f"{target}{tag}.rcpart"
 
     @staticmethod
@@ -825,7 +934,9 @@ class Handler(BaseHTTPRequestHandler):
         target, tmp = self._part(path, self.headers.get("X-Rc-Id", ""))
         if target is None:
             return self._json_error(403, "bad target", close=True)
-        if not within_share(folder := os.path.dirname(target)) or not os.path.isdir(folder):
+        if not within_share(folder := os.path.dirname(target)) or not os.path.isdir(
+            folder
+        ):
             return self._json_error(404, "no such folder", close=True)
         length = self.headers.get("Content-Length")
         if length is None or not length.isdigit():
@@ -849,20 +960,30 @@ class Handler(BaseHTTPRequestHandler):
             with open(tmp, "r+b" if have else "wb") as f:
                 f.seek(offset)
                 f.truncate(offset)
-                while remaining > 0 and (chunk := self.rfile.read(min(65536, remaining))):
+                while remaining > 0 and (
+                    chunk := self.rfile.read(min(65536, remaining))
+                ):
                     f.write(chunk)
                     remaining -= len(chunk)
         except (ConnectionError, TimeoutError):
             pass  # link dropped/stalled mid-body: keep the partial for the next resume
-        except OSError as e:  # a real disk error (ENOSPC/EACCES): surface it, keep the partial
+        except (
+            OSError
+        ) as e:  # a real disk error (ENOSPC/EACCES): surface it, keep the partial
             log_event("upload", os.path.basename(target), f"err {e}")
-        if remaining:  # body not fully drained (drop or write error) — end the connection so
-            self.close_connection = True  # its leftover bytes can't be read as a next request
+        if (
+            remaining
+        ):  # body not fully drained (drop or write error) — end the connection so
+            self.close_connection = (
+                True  # its leftover bytes can't be read as a next request
+            )
         now = self._have(tmp)
         if now >= total:
             os.replace(tmp, target)
             log_event("upload", os.path.relpath(target, SHARE), "ok")
-            return self._json({"ok": True, "done": True, "name": os.path.basename(target)})
+            return self._json(
+                {"ok": True, "done": True, "name": os.path.basename(target)}
+            )
         with contextlib.suppress(OSError):
             self._json({"ok": True, "done": False, "have": now})
 
@@ -892,9 +1013,14 @@ class Handler(BaseHTTPRequestHandler):
             case "/":
                 return self._send(200, page(), set_cookie=True)
             case "/status":
-                return self._json({
-                    "running": sorted(running()), "login": login_status(),
-                    "states": session_states(), "desk": desk_projects()})
+                return self._json(
+                    {
+                        "running": sorted(running()),
+                        "login": login_status(),
+                        "states": session_states(),
+                        "desk": desk_projects(),
+                    }
+                )
             case "/create":
                 proj = q.get("proj", [""])[0]
                 status, reason = create(proj)
@@ -931,7 +1057,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         u = urlparse(self.path)
-        if not self._authed(parse_qs(u.query)):  # PUT carries a body we won't read -> close
+        if not self._authed(
+            parse_qs(u.query)
+        ):  # PUT carries a body we won't read -> close
             return self._send(403, b"forbidden", close=True)
         if _is_files(u.path):
             return self._upload(u.path)
@@ -978,7 +1106,9 @@ class Server(ThreadingHTTPServer):
 
 if __name__ == "__main__":
     if not TOKEN:
-        raise SystemExit("no launcher token: run install.sh (writes ~/.config/rc-launcher/token)")
+        raise SystemExit(
+            "no launcher token: run install.sh (writes ~/.config/rc-launcher/token)"
+        )
     print(f"rc-launcher on {BIND}:{PORT} parent={PARENT} spawn={SPAWN}")
     threading.Thread(target=sweep_loop, daemon=True).start()
     Server((BIND, PORT), Handler).serve_forever()

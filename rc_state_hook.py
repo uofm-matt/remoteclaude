@@ -34,18 +34,25 @@ def main() -> None:
     # after a turn ends. Under bypassPermissions the idle ping is nearly the only one
     # that fires, so it painted every finished session as amber "waiting". Idle ping
     # -> idle; anything else stays waiting.
-    if event == "Notification" and "waiting for your input" in payload.get("message", "").lower():
+    if (
+        event == "Notification"
+        and "waiting for your input" in payload.get("message", "").lower()
+    ):
         state = "idle"
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps({
-        "state": state,
-        "project": os.environ.get("RC_PROJECT", ""),
-        "cwd": payload.get("cwd") or os.getcwd(),
-        "session_id": sid,
-        "event": event,
-        "ts": time.time(),
-    }))
+    f.write_text(
+        json.dumps(
+            {
+                "state": state,
+                "project": os.environ.get("RC_PROJECT", ""),
+                "cwd": payload.get("cwd") or os.getcwd(),
+                "session_id": sid,
+                "event": event,
+                "ts": time.time(),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -16,12 +16,28 @@ from types import SimpleNamespace
 import rc_launcher
 
 # module attrs tests reassign (SHARE/TOKEN/... and the launch-mode flags)
-_ATTRS = ("SHARE", "TOKEN", "PARENT", "STATE_DIR", "CLAUDE_JSON", "CLAUDE_PROJECTS",
-          "RESUME", "SPAWN", "TAKEOVER", "log_event", "_desk_cache")
+_ATTRS = (
+    "SHARE",
+    "TOKEN",
+    "PARENT",
+    "STATE_DIR",
+    "CLAUDE_JSON",
+    "CLAUDE_PROJECTS",
+    "RESUME",
+    "SPAWN",
+    "TAKEOVER",
+    "log_event",
+    "_desk_cache",
+)
 # stdlib singletons the subprocess-mock rebinds (rc_launcher.subprocess IS the module object)
-_STDLIB = ((rc_launcher.subprocess, "run"), (rc_launcher.os, "kill"),
-           (rc_launcher.time, "sleep"), (rc_launcher.time, "time"),
-           (rc_launcher.os.path, "islink"), (rc_launcher.os, "readlink"))
+_STDLIB = (
+    (rc_launcher.subprocess, "run"),
+    (rc_launcher.os, "kill"),
+    (rc_launcher.time, "sleep"),
+    (rc_launcher.time, "time"),
+    (rc_launcher.os.path, "islink"),
+    (rc_launcher.os, "readlink"),
+)
 
 
 def proc(returncode=0, stdout="", stderr=""):

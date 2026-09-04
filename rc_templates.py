@@ -32,7 +32,6 @@ background:var(--bg);color:var(--fg)}
 ul{list-style:none;margin:0;padding:6px 10px 48px}"""
 
 
-
 PAGE = """<!doctype html>
 <html><head>
 <meta charset=utf-8>
@@ -369,7 +368,11 @@ __PTR__
 </script>
 </body></html>"""
 
-PAGE = PAGE.replace("__THEME__", _THEME).replace("__BASE__", _BASE).replace("__PTR__", _PTR)
+PAGE = (
+    PAGE.replace("__THEME__", _THEME)
+    .replace("__BASE__", _BASE)
+    .replace("__PTR__", _PTR)
+)
 FILES_PAGE = (
     FILES_PAGE.replace("__THEME__", _THEME)
     .replace("__BASE__", _BASE)

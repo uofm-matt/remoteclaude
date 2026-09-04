@@ -20,8 +20,9 @@ def auth_status(timeout: float = 15) -> tuple[str, str]:
     logged in, the error text when unknown, else ''. Spawns a process, so a caller that polls
     should cache the result."""
     try:
-        out = subprocess.run([CLAUDE, "auth", "status"],
-                             capture_output=True, text=True, timeout=timeout).stdout
+        out = subprocess.run(
+            [CLAUDE, "auth", "status"], capture_output=True, text=True, timeout=timeout
+        ).stdout
         d = json.loads(out)
     except (json.JSONDecodeError, subprocess.SubprocessError, OSError) as err:
         return "unknown", str(err)

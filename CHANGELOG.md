@@ -2,6 +2,18 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+## 2026-09-04
+
+- `ruff format` adopted repo-wide and gated: 13 of 22 .py files reformatted (whitespace,
+  quotes, wrapping only — every tracked module parses to an identical AST before and after,
+  17 of 17), `ruff format --check .` added to ci.yml. Closes the audit's open decision; the
+  drift had reached 6 of 8 shipped modules with nothing enforcing either way. Cosmetic cost:
+  ruff splits a few long lines with trailing comments into three-line shapes — move those
+  comments above the line when next touching them.
+- Test flake fixed: the 411-without-Content-Length pin read the response with one `recv`
+  and the JSON body can trail the headers in a second segment; reads to EOF now (the server
+  sends `Connection: close`). Passed 5/5 after; it had passed on the day it was written.
+
 ## 2026-09-02
 
 - Surface polish on top of the readability pass (mechanical, no behavior change):

@@ -51,21 +51,49 @@ class HookTest(unittest.TestCase):
         return buf.getvalue()
 
     def test_hook_maps_events_to_state_and_cleans_up(self):
-        self._hook({"hook_event_name": "UserPromptSubmit", "session_id": "s1",
-                    "cwd": "/tmp/proj", "project": "proj"})
+        self._hook(
+            {
+                "hook_event_name": "UserPromptSubmit",
+                "session_id": "s1",
+                "cwd": "/tmp/proj",
+                "project": "proj",
+            }
+        )
         f = self.tmp / "s1.json"
         self.assertEqual(json.loads(f.read_text())["state"], "working")
-        self._hook({"hook_event_name": "Notification", "session_id": "s1",
-                    "cwd": "/tmp/proj", "project": "proj",
-                    "message": "Claude needs your permission to use Bash"})
-        self.assertEqual(json.loads(f.read_text())["state"], "waiting")  # blocked turn -> waiting
-        self._hook({"hook_event_name": "Notification", "session_id": "s1",
-                    "cwd": "/tmp/proj", "project": "proj",
-                    "message": "Claude is waiting for your input"})
-        self.assertEqual(json.loads(f.read_text())["state"], "idle")  # idle ping is NOT waiting
+        self._hook(
+            {
+                "hook_event_name": "Notification",
+                "session_id": "s1",
+                "cwd": "/tmp/proj",
+                "project": "proj",
+                "message": "Claude needs your permission to use Bash",
+            }
+        )
+        self.assertEqual(
+            json.loads(f.read_text())["state"], "waiting"
+        )  # blocked turn -> waiting
+        self._hook(
+            {
+                "hook_event_name": "Notification",
+                "session_id": "s1",
+                "cwd": "/tmp/proj",
+                "project": "proj",
+                "message": "Claude is waiting for your input",
+            }
+        )
+        self.assertEqual(
+            json.loads(f.read_text())["state"], "idle"
+        )  # idle ping is NOT waiting
         for ev in ("Stop", "SubagentStop", "SessionStart"):
-            self._hook({"hook_event_name": ev, "session_id": "s1",
-                        "cwd": "/tmp/proj", "project": "proj"})
+            self._hook(
+                {
+                    "hook_event_name": ev,
+                    "session_id": "s1",
+                    "cwd": "/tmp/proj",
+                    "project": "proj",
+                }
+            )
             # each must map to a real RANK state — a renamed/typo'd value would drop the
             # session out of every badge and --list silently (the drift rc_state exists for)
             self.assertEqual(json.loads(f.read_text())["state"], "idle", ev)
@@ -73,9 +101,17 @@ class HookTest(unittest.TestCase):
         self.assertFalse(f.exists())  # SessionEnd removes the file
 
     def test_status_list_shows_live_session(self):
-        (self.tmp / "s1.json").write_text(json.dumps(
-            {"state": "working", "project": "proj", "cwd": "/tmp/proj",
-             "session_id": "s1", "ts": time.time()}))
+        (self.tmp / "s1.json").write_text(
+            json.dumps(
+                {
+                    "state": "working",
+                    "project": "proj",
+                    "cwd": "/tmp/proj",
+                    "session_id": "s1",
+                    "ts": time.time(),
+                }
+            )
+        )
         out = self._status("--list")
         self.assertIn("proj", out)
         self.assertIn("working", out)
@@ -83,30 +119,60 @@ class HookTest(unittest.TestCase):
     def test_status_prompt_tag_when_tree_shares(self):
         here = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, here, True)
-        (self.tmp / "s1.json").write_text(json.dumps(
-            {"state": "working", "project": "p", "cwd": str(here),
-             "session_id": "s1", "ts": time.time()}))
-        self.assertIn("rc:working", self._status(str(here)))  # RPROMPT glyph for a live turn here
+        (self.tmp / "s1.json").write_text(
+            json.dumps(
+                {
+                    "state": "working",
+                    "project": "p",
+                    "cwd": str(here),
+                    "session_id": "s1",
+                    "ts": time.time(),
+                }
+            )
+        )
+        self.assertIn(
+            "rc:working", self._status(str(here))
+        )  # RPROMPT glyph for a live turn here
 
     def test_status_ignores_stale(self):
-        (self.tmp / "s1.json").write_text(json.dumps(
-            {"state": "working", "project": "old", "cwd": "/tmp/x",
-             "session_id": "s1", "ts": time.time() - rc_state.STATE_TTL - 60}))
+        (self.tmp / "s1.json").write_text(
+            json.dumps(
+                {
+                    "state": "working",
+                    "project": "old",
+                    "cwd": "/tmp/x",
+                    "session_id": "s1",
+                    "ts": time.time() - rc_state.STATE_TTL - 60,
+                }
+            )
+        )
         self.assertNotIn("old", self._status("--list"))
 
     def test_status_skips_corrupt_state_file(self):
-        (self.tmp / "bad.json").write_text("{not json")  # corrupt -> skipped, RPROMPT must not crash
-        (self.tmp / "s1.json").write_text(json.dumps(
-            {"state": "working", "project": "p", "cwd": "/tmp/p",
-             "session_id": "s1", "ts": time.time()}))
+        (self.tmp / "bad.json").write_text(
+            "{not json"
+        )  # corrupt -> skipped, RPROMPT must not crash
+        (self.tmp / "s1.json").write_text(
+            json.dumps(
+                {
+                    "state": "working",
+                    "project": "p",
+                    "cwd": "/tmp/p",
+                    "session_id": "s1",
+                    "ts": time.time(),
+                }
+            )
+        )
         out = self._status("--list")
-        self.assertIn("p", out)        # the good file still lists
-        self.assertNotIn("bad", out)   # corrupt file skipped cleanly, no traceback
+        self.assertIn("p", out)  # the good file still lists
+        self.assertNotIn("bad", out)  # corrupt file skipped cleanly, no traceback
 
 
 class HealthcheckTest(unittest.TestCase):
     def setUp(self):
-        self.addCleanup(setattr, rc_healthcheck.subprocess, "run", rc_healthcheck.subprocess.run)
+        self.addCleanup(
+            setattr, rc_healthcheck.subprocess, "run", rc_healthcheck.subprocess.run
+        )
 
     def _claude(self, stdout):
         rc_healthcheck.subprocess.run = lambda *a, **k: proc(stdout=stdout)
@@ -118,10 +184,14 @@ class HealthcheckTest(unittest.TestCase):
         self._claude('{"loggedIn": false}')
         self.assertEqual(rc_claude.auth_status(), ("loggedout", ""))
         self._claude("not json")
-        self.assertEqual(rc_claude.auth_status()[0], "unknown")  # JSONDecodeError -> unknown
+        self.assertEqual(
+            rc_claude.auth_status()[0], "unknown"
+        )  # JSONDecodeError -> unknown
 
     def test_notify_uses_desktop_path(self):
-        self.addCleanup(setattr, rc_healthcheck.platform, "system", rc_healthcheck.platform.system)
+        self.addCleanup(
+            setattr, rc_healthcheck.platform, "system", rc_healthcheck.platform.system
+        )
         calls = []
         rc_healthcheck.subprocess.run = lambda *a, **k: calls.append(a[0])
         rc_healthcheck.platform.system = lambda: "Darwin"
@@ -129,20 +199,34 @@ class HealthcheckTest(unittest.TestCase):
         self.assertTrue(any("osascript" in c for c in calls))  # macOS notification path
 
     def test_notify_linux_desktop_and_phone_push(self):
-        self.addCleanup(setattr, rc_healthcheck.platform, "system", rc_healthcheck.platform.system)
-        self.addCleanup(setattr, rc_healthcheck.shutil, "which", rc_healthcheck.shutil.which)
-        self.addCleanup(setattr, rc_healthcheck, "NOTIFY_URL", rc_healthcheck.NOTIFY_URL)
-        self.addCleanup(setattr, rc_healthcheck.urllib.request, "urlopen",
-                        rc_healthcheck.urllib.request.urlopen)
+        self.addCleanup(
+            setattr, rc_healthcheck.platform, "system", rc_healthcheck.platform.system
+        )
+        self.addCleanup(
+            setattr, rc_healthcheck.shutil, "which", rc_healthcheck.shutil.which
+        )
+        self.addCleanup(
+            setattr, rc_healthcheck, "NOTIFY_URL", rc_healthcheck.NOTIFY_URL
+        )
+        self.addCleanup(
+            setattr,
+            rc_healthcheck.urllib.request,
+            "urlopen",
+            rc_healthcheck.urllib.request.urlopen,
+        )
         calls, pushed = [], []
         rc_healthcheck.platform.system = lambda: "Linux"
         rc_healthcheck.shutil.which = lambda n: "/usr/bin/notify-send"
         rc_healthcheck.subprocess.run = lambda *a, **k: calls.append(a[0])
         rc_healthcheck.NOTIFY_URL = "http://ntfy.example/rc"
-        rc_healthcheck.urllib.request.urlopen = lambda req, timeout=None: pushed.append(req.full_url)
+        rc_healthcheck.urllib.request.urlopen = lambda req, timeout=None: pushed.append(
+            req.full_url
+        )
         rc_healthcheck.notify("t", "m")
         self.assertTrue(any("notify-send" in c for c in calls))  # Linux desktop path
-        self.assertIn("http://ntfy.example/rc", pushed)          # the ntfy/webhook phone push fired
+        self.assertIn(
+            "http://ntfy.example/rc", pushed
+        )  # the ntfy/webhook phone push fired
 
     def test_main_notifies_only_on_login_problem(self):
         self.addCleanup(setattr, rc_healthcheck, "notify", rc_healthcheck.notify)
@@ -151,7 +235,9 @@ class HealthcheckTest(unittest.TestCase):
         self._claude('{"loggedIn": false}')  # logged out -> alert
         with redirect_stdout(io.StringIO()):
             rc_healthcheck.main()
-        self.assertEqual(len(notes), 1)  # a login problem fires exactly one notification
+        self.assertEqual(
+            len(notes), 1
+        )  # a login problem fires exactly one notification
         self._claude('{"loggedIn": true, "email": "me@x"}')  # healthy -> stay quiet
         with redirect_stdout(io.StringIO()):
             rc_healthcheck.main()
