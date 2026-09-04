@@ -12,6 +12,8 @@ PROJECTS_PARENT="${RC_PROJECTS_PARENT:-$HOME/projects}"
 SHARE_DIR="${RC_SHARE_DIR:-$HOME/rc-share}"
 RESUME="${RC_RESUME:-continue}"    # continue | fork | off
 TAKEOVER="${RC_TAKEOVER:-1}"       # 1 = close the project's desktop session first
+SPAWN="${RC_SPAWN:-same-dir}"      # same-dir | worktree | session
+SNAPSHOT="${RC_SNAPSHOT:-}"        # 1 = git-checkpoint the tree before each remote turn
 CLAUDE_BIN="${RC_CLAUDE_BIN:-$HOME/.local/bin/claude}"
 PY="$(command -v python3 || true)"
 TMUX_BIN="${RC_TMUX_BIN:-$(command -v tmux || true)}"
@@ -45,7 +47,7 @@ if [ ! -s "$TOKEN_FILE" ]; then
   chmod 600 "$TOKEN_FILE"
 fi
 
-# 3b. dedicated file-share drop dir — served read-only at /files and, if you enable
+# 3b. dedicated file-share drop dir — served at /files (browse, download, upload) and, if you enable
 #     SMB by hand, mountable as a Windows drive. A dir of its own, never ~/projects.
 mkdir -p "$SHARE_DIR"
 chmod 700 "$SHARE_DIR"
@@ -97,6 +99,8 @@ install_launchd() {
     <key>RC_SHARE_DIR</key><string>${SHARE_DIR}</string>
     <key>RC_RESUME</key><string>${RESUME}</string>
     <key>RC_TAKEOVER</key><string>${TAKEOVER}</string>
+    <key>RC_SPAWN</key><string>${SPAWN}</string>
+    <key>RC_SNAPSHOT</key><string>${SNAPSHOT}</string>
   </dict>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
@@ -145,6 +149,8 @@ Environment=RC_LAUNCHER_PORT=${PORT}
 Environment=RC_SHARE_DIR=${SHARE_DIR}
 Environment=RC_RESUME=${RESUME}
 Environment=RC_TAKEOVER=${TAKEOVER}
+Environment=RC_SPAWN=${SPAWN}
+Environment=RC_SNAPSHOT=${SNAPSHOT}
 Restart=always
 RestartSec=10
 [Install]
@@ -208,4 +214,4 @@ echo "    resume: taps reopen the project's last thread and close its desktop se
 echo "      (RC_RESUME=${RESUME}, RC_TAKEOVER=${TAKEOVER}); disable with RC_RESUME=off / RC_TAKEOVER=0 ./install.sh"
 echo "    reach it: same LAN, or a VPN / tailnet subnet route to ${IP}"
 echo "    optional: RC_NOTIFY_URL=https://ntfy.sh/your-topic ./install.sh  (phone push on login lapse)"
-echo "    optional: RC_SNAPSHOT=1 in the service env  (git-checkpoint the tree before each remote turn)"
+echo "    optional: RC_SNAPSHOT=1 ./install.sh  (git-checkpoint the tree before each remote turn)"

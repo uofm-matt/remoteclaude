@@ -207,10 +207,10 @@ async function stopSess(n,isDesk){
   toast('closing '+n+'\\u2026');
   try{
     const r=await fetch('/stop?json=1&proj='+encodeURIComponent(n)+(isDesk?'&desk=1':''));
-    await r.json();
+    const j=await r.json();
     if(isDesk)DESK.delete(n);else RUNNING.delete(n);
     render();
-    toast('\\u2715 closed '+n);
+    toast(j.status==='idle'?n+' was already closed':'\\u2715 closed '+n);
   }catch(e){toast('failed to close '+n);}
 }
 async function createProj(n){
@@ -219,7 +219,7 @@ async function createProj(n){
   $('#q').value=n;render();
   const drop=()=>{const i=PROJECTS.indexOf(n);if(i>=0)PROJECTS.splice(i,1);};
   try{
-    const r=await fetch('/create?json=1&proj='+encodeURIComponent(n));
+    const r=await fetch('/create?proj='+encodeURIComponent(n));
     const j=await r.json();
     STARTING.delete(n);
     if(j.status!=='created'&&j.status!=='exists'){

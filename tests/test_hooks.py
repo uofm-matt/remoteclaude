@@ -100,6 +100,11 @@ class HookTest(unittest.TestCase):
         self._hook({"hook_event_name": "SessionEnd", "session_id": "s1"})
         self.assertFalse(f.exists())  # SessionEnd removes the file
 
+    def test_unknown_event_fails_loud(self):
+        # an event the vocabulary lacks used to paint "working"; it must crash instead
+        with self.assertRaises(KeyError):
+            self._hook({"hook_event_name": "SomethingNew", "session_id": "s9"})
+
     def test_status_list_shows_live_session(self):
         (self.tmp / "s1.json").write_text(
             json.dumps(

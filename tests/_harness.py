@@ -108,7 +108,10 @@ def serve(tc):
     shutdown; returns the bound port. Uses Server (not raw ThreadingHTTPServer) so a client RST
     in a test doesn't dump a framework traceback into the test output."""
     srv = rc_launcher.Server(("127.0.0.1", 0), rc_launcher.Handler)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    # poll_interval: shutdown() waits out one poll, and 33 tests each paid the 0.5s default
+    threading.Thread(
+        target=lambda: srv.serve_forever(poll_interval=0.05), daemon=True
+    ).start()
     tc.addCleanup(srv.server_close)
     tc.addCleanup(srv.shutdown)
     return srv.server_address[1]

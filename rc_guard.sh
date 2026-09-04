@@ -5,7 +5,7 @@
 # then call `_rc_guard "$@" || return` in your claude wrapper before launching.
 # Sets _RC_GUARD_ARGS="--new" when you picked a separate fresh session — feed it
 # to your resume logic (never to claude itself). All logic lives in rc_guard.py;
-# see RUNBOOK.md "Desk-side zsh integration" for a minimal wrapper.
+# see RUNBOOK.md "Desk-side shell integration" for a minimal wrapper.
 #
 # ${BASH_SOURCE[0]:-${(%):-%x}}: bash expands BASH_SOURCE and never evaluates the
 # zsh-only fallback; zsh has no BASH_SOURCE and falls through to %x (this file).

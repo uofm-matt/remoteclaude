@@ -291,6 +291,57 @@ class UploadServerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body, data)
 
+    def test_resume_below_have_truncates_the_stale_tail(self):
+        # The audit's one demonstrated corruption: without f.truncate(offset) a re-PUT below
+        # `have` leaves the old tail in place and reports it as stored (have=500, not 450).
+        data = bytes(range(256)) * 2
+        self.req(
+            "PUT",
+            "/files/t.bin",
+            body=data[:500],
+            headers={"X-Rc-Offset": "0", "X-Rc-Total": "1000"},
+        )
+        status, _, body = self.req(
+            "PUT",
+            "/files/t.bin",
+            body=data[400:450],
+            headers={"X-Rc-Offset": "400", "X-Rc-Total": "1000"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["have"], 450)
+        _, hdrs, _ = self.req("HEAD", "/files/t.bin")
+        self.assertEqual(hdrs.get("x-rc-have"), "450")
+        self.assertEqual(Path(self.share, "t.bin.rcpart").read_bytes(), data[:450])
+
+    def test_unauthorized_put_closes_the_connection(self):
+        # the body is never read on a 403, so keep-alive reuse would desync: must close
+        status, hdrs, _ = self.req(
+            "PUT",
+            "/files/n.bin",
+            body=b"x",
+            headers={"X-Rc-Offset": "0", "X-Rc-Total": "1"},
+            cookie=False,
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(hdrs.get("connection"), "close")
+
+    def test_put_to_escaping_path_is_404(self):
+        # share_target() is pinned against five escape forms at the function level
+        # (test_confinement); this pins the PUT call site, so a handler that skipped
+        # the confinement check could not pass.
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside, True)
+        os.symlink(outside, os.path.join(self.share, "esc"))
+        for path in ("/files/../evil.bin", "/files/esc/evil.bin"):
+            status, _, _ = self.req(
+                "PUT",
+                path,
+                body=b"x",
+                headers={"X-Rc-Offset": "0", "X-Rc-Total": "1"},
+            )
+            self.assertEqual(status, 403, path)  # the PUT path's "bad target" refusal
+        self.assertEqual(os.listdir(outside), [])
+
     def test_upload_write_error_is_logged_not_finalized(self):
         logged: list = []
         rc_launcher.log_event = lambda *a: logged.append(a)
@@ -298,7 +349,7 @@ class UploadServerTest(unittest.TestCase):
             self.share, 0o500
         )  # read-only dir -> the .rcpart open() raises OSError
         try:
-            status, _, body = self.req(
+            status, hdrs, body = self.req(
                 "PUT",
                 "/files/e.bin",
                 body=b"data",
@@ -307,6 +358,7 @@ class UploadServerTest(unittest.TestCase):
         finally:
             os.chmod(self.share, 0o700)
         self.assertEqual(status, 200)
+        self.assertEqual(hdrs.get("connection"), "close")  # unread body: never reuse
         self.assertFalse(json.loads(body)["done"])
         self.assertTrue(any(a[0] == "upload" and "err" in str(a[2]) for a in logged))
 
@@ -484,8 +536,8 @@ class RowsHtmlTest(unittest.TestCase):
             "empty", rc_launcher.rows_html(os.path.join(self.share, "adir"), "/adir")
         )
         self.assertIn(
-            "empty", rc_launcher.rows_html(os.path.join(self.share, "no"), "/no")
-        )  # OSError
+            "unreadable", rc_launcher.rows_html(os.path.join(self.share, "no"), "/no")
+        )  # OSError is not "empty"
 
 
 class RouteTest(unittest.TestCase):
@@ -596,6 +648,18 @@ class RouteTest(unittest.TestCase):
         self.assertNotIn((321, rc_launcher.signal.SIGKILL), killed)
         joined = [" ".join(map(str, c)) for c in calls]
         self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
+
+    def test_launch_ignores_the_desk_flag(self):
+        # desk=1 only means something on /stop; on /launch it must launch, not desk-stop
+        # (the audit's half-pin: only the /stop side of the conditional was tested)
+        os.makedirs(os.path.join(rc_launcher.PARENT, "p"))
+        killed = []
+        rc_launcher.os.kill = lambda pid, sig: killed.append((pid, sig))
+        self.desk = {"321": desk(os.path.join(rc_launcher.PARENT, "p"))}
+        self.responses = spawn_ok()
+        status, body = self.get("/launch?proj=p&desk=1&json=1")
+        self.assertEqual(json.loads(body)["status"], "launched")
+        self.assertEqual(killed, [])
 
     def test_unknown_route_404(self):
         self.assertEqual(self.get("/nonexistent")[0], 404)

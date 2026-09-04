@@ -8,7 +8,7 @@ Each session is held in a detached tmux session so it survives the HTTP
 request returning and any SSH/terminal closing.
 
 Config comes from the environment (set by the LaunchAgent); the defaults
-match this machine. Refuses to start without RC_LAUNCHER_TOKEN.
+match this machine. Refuses to start without the token file.
 """
 
 import contextlib
@@ -47,9 +47,11 @@ GIT = os.environ.get("RC_GIT_BIN", "git")
 
 
 def _read_token() -> str:
-    """Auth token, file-first (the 0600 file install.sh writes) with the env as fallback.
-    The service files stopped carrying the secret, so `launchctl print` / `systemctl show`
-    can't leak it and rotation is write-file + kickstart, no plist surgery."""
+    """Auth token from the 0600 file install.sh writes — the only place it lives. The
+    service files stopped carrying the secret, so `launchctl print` / `systemctl show`
+    can't leak it and rotation is write-file + kickstart, no plist surgery. No env
+    fallback: an env-carried token is readable via ps/launchctl and inherited by every
+    child of the HTTP process — the channel the 2026-08-16 remediation closed."""
     tf = Path(
         os.path.expanduser(
             os.environ.get("RC_LAUNCHER_TOKEN_FILE", "~/.config/rc-launcher/token")
@@ -57,7 +59,7 @@ def _read_token() -> str:
     )
     with contextlib.suppress(OSError):
         return tf.read_text().strip()
-    return os.environ.get("RC_LAUNCHER_TOKEN", "")
+    return ""
 
 
 TOKEN = _read_token()
@@ -622,9 +624,10 @@ def create(proj: str) -> tuple[str, str | None]:
     if not NAME_RE.match(proj):
         return "badname", "letters, digits, dot, dash, underscore only"
     path = os.path.join(PARENT, proj)
-    if os.path.exists(path):
+    try:
+        os.makedirs(path)
+    except FileExistsError:  # an existing project, or a second tap racing the first
         return "exists", None
-    os.makedirs(path)
     subprocess.run([GIT, "init", "-q"], cwd=path, capture_output=True)
     Path(path, "CLAUDE.md").write_text(f"# {proj}\n")
     return "created", None
@@ -692,7 +695,7 @@ def rows_html(target: str, rel: str) -> str:
     try:
         names = sorted(os.listdir(target))
     except OSError:
-        return "<li class=empty>empty</li>"
+        return "<li class=empty>unreadable</li>"  # a permission failure is not "empty"
     base = rel.rstrip("/")
     dirs, files = [], []
     for name in names:
@@ -862,7 +865,7 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def _files(self, path: str):
-        """Read-only browse/download under SHARE, behind the same token gate.
+        """Browse/download under SHARE, behind the same token gate.
         share_target() resolves '..' and symlink escapes away, so this can only
         reach files inside SHARE (never ~/projects or $HOME)."""
         rel = path.removeprefix("/files")

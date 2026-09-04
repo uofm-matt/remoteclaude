@@ -4,6 +4,36 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-04
 
+- Audit Now batch (2026-09-02's paydown, all seven entries): the resumed-upload truncate
+  is pinned (a re-PUT below `have` must leave `have=450`, not report the stale tail as
+  stored) along with `connection: close` on the write-error 200 and the 403 PUT, and a
+  handler-level PUT to an escaping path; the four mutation-deletable launcher paths are
+  pinned (a fresh launch with a live desk claude kills nothing; `RC_TAKEOVER=0` kills
+  nothing on resume; the SIGTERM grace loop must run before SIGKILL; `ensure_trusted`
+  lands the trust flag; `RC_PROJECT` is in the session env) — all eight mutants re-run on
+  the real tree and killed, source md5-restored and bytecode purged after each; the
+  `RC_LAUNCHER_TOKEN` env fallback is deleted (panel-rated High: an env-carried token is
+  readable via ps/launchctl and inherited by every child — the channel the 08-16
+  remediation closed); two hollow guard tests and the JS 'gives up' test now discriminate
+  (the JS one carries the onRetry tripwire so a stall-counting regression fails instead
+  of hanging node); `serve_forever(poll_interval=0.05)` — the suite fell from ~20s to
+  under 5s. Small fixes promoted by the panel: `create()` catches `FileExistsError` (a
+  double-tap raced `os.makedirs` and 500'd), the hook fails loud on an unknown event
+  instead of painting "working", `rows_html` renders an OSError as "unreadable" not
+  "empty" (its pin flipped in the same commit), `stopSess` toasts "was already closed" on
+  an idle desk-✕ instead of lying, the dead `json=1` on the /create fetch is gone, and
+  `/launch?desk=1` is pinned to launch (the audit's half-pin).
+- Docs: RUNBOOK's Linux-takeover claim was inverted (it said "degrades to a no-op" while
+  the code has read `/proc/<pid>/cwd` since the first commit) — now "untested there";
+  `RC_SPAWN`/`RC_SNAPSHOT` are written into the service env by install.sh, so the
+  "flip it in the plist" instruction survives a re-install; version pin to 2.1.258 with
+  a re-verify note (the `remote-control` subcommand behind `RC_SPAWN=worktree|session` no
+  longer appears in `claude --help` — those modes are unverified on current builds);
+  retired "read-only" wording in install.sh and the `_files` docstring; rc_guard.sh's
+  RUNBOOK cross-reference; the Android build's default host is `rc-launcher.local`, not a
+  `192.168.1.x` address in a public repo; CHANGELOG backfilled for f364ea8 and 8e989a7.
+  Not done: docs/launcher.png needs a phone screenshot of the current page.
+
 - `ruff format` adopted repo-wide and gated: 13 of 22 .py files reformatted (whitespace,
   quotes, wrapping only — every tracked module parses to an identical AST before and after,
   17 of 17), `ruff format --check .` added to ci.yml. Closes the audit's open decision; the
@@ -97,6 +127,10 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-08-17
 
+- *(backfilled 2026-09-04)* `[tool.coverage.run] source` declared in pyproject (f364ea8): a
+  bare `coverage run` measures the shipped modules, same as CI's explicit `--source`.
+- *(backfilled 2026-09-04)* `uv.lock` gitignored (8e989a7): uv runs the review scripts here
+  now and the lock is tool residue, not project state.
 - Readability pass, no behavior change: one `_tmux()` wrapper now carries the twelve
   captured tmux control calls, so `capture_output=True` stopped outweighing the commands
   in `_spawn`/`stop`/`launch` (`new-session` stays raw — it is the one call whose stderr

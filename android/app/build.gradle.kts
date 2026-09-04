@@ -18,7 +18,7 @@ android {
         // preserves that across updates). CI guards that no token can sneak back in.
         // Mac host:port — one source of truth for both activities. Override with RC_HOST;
         // include the scheme (e.g. http://host:8787) — it's used as a URL base verbatim.
-        buildConfigField("String", "RC_HOST", "\"${System.getenv("RC_HOST") ?: "http://192.168.1.100:8787"}\"")
+        buildConfigField("String", "RC_HOST", "\"${System.getenv("RC_HOST") ?: "http://rc-launcher.local:8787"}\"")
     }
 
     // A stable signing key so CI builds share a signature: sideload can then update

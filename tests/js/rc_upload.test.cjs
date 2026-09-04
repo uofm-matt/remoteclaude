@@ -109,12 +109,14 @@ test('mid-transfer unknown probes terminate at the stall cap', async () => {
 });
 
 test('gives up after consecutive no-progress rounds', async () => {
-  let probes = 0;
+  let probes = 0, retries = 0;
+  // tripwire: deleting the lastHave bookkeeping turns this into an all-microtask spin
+  // that --test-timeout cannot preempt; onRetry throws before it can hang the runner.
   const r = await resumeUpload(
     1000,
     async () => { probes++; return 100; },
     async () => false,
-    { maxStalls: 5 },
+    { maxStalls: 5, onRetry: async () => { if (++retries > 10) throw new Error('spinning: stalls not counted'); } },
   );
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'stalled');

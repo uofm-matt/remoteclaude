@@ -117,8 +117,10 @@ class DetectionTest(GuardHarness):
             physical = os.path.realpath(target)
             with unittest.mock.patch.dict(os.environ, {"PWD": logical}):
                 self.assertEqual(rc_guard.live_sess(physical, parent), "rc-foo")
-            # a stale $PWD pointing elsewhere is ignored, not trusted
-            with unittest.mock.patch.dict(os.environ, {"PWD": tmp}):
+            # a stale $PWD naming ANOTHER project under parent is ignored, not trusted:
+            # without the samefile check it would win and answer rc-other
+            stale = os.path.join(parent, "other")
+            with unittest.mock.patch.dict(os.environ, {"PWD": stale}):
                 self.assertIsNone(rc_guard.live_sess(physical, parent))
 
     def test_root_parent_still_matches(self):
@@ -143,7 +145,9 @@ class SkipRulesTest(GuardHarness):
         self.assertEqual(rc_guard.main([]), rc_guard.PROCEED)
         self.stdin.isatty = lambda: True
         self.stderr.isatty = lambda: False  # menu would be invisible; don't block
-        self.assertEqual(rc_guard.main([]), rc_guard.PROCEED)
+        self.has_session_rcs = [0]  # a live session that WOULD prompt on a tty
+        with _cwd("/parent/alpha"):
+            self.assertEqual(rc_guard.main([]), rc_guard.PROCEED)
         self.assertEqual(self.calls, [])
 
     def test_caller_controlled_session_flags_skip_the_prompt(self):

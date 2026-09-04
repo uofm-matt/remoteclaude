@@ -242,10 +242,19 @@ class OrchestrationTest(unittest.TestCase):
             "same-dir",
         )  # fresh path, no takeover
         self.responses = spawn_ok()
+        # a live desk claude in the project: a FRESH launch must leave it alone (the
+        # takeover guard's `resuming` condition was mutation-deletable with 127 green)
+        self.desk = {"777": desk(os.path.join(rc_launcher.PARENT, "proj"))}
         self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
+        self.assertEqual(self.killed, [])
+        # ensure_trusted ran at the call site: the trust flag landed in CLAUDE_JSON
+        trusted = rc_launcher.json.loads(Path(rc_launcher.CLAUDE_JSON).read_text())
+        key = os.path.join(rc_launcher.PARENT, "proj")
+        self.assertTrue(trusted["projects"][key]["hasTrustDialogAccepted"])
         newsession = next(
             c for c in self.calls if "new-session" in " ".join(map(str, c))
         )
+        self.assertIn("RC_PROJECT=proj", newsession)  # the hook and badge key on it
         self.assertEqual(
             newsession[-1],  # the exact claude command tmux is told to run —
             f"{rc_launcher.CLAUDE} --remote-control proj",
@@ -444,6 +453,18 @@ class OrchestrationTest(unittest.TestCase):
                 real_readlink,
             )
 
+    def test_resume_with_takeover_off_leaves_desk_sessions_alone(self):
+        rc_launcher.RESUME, rc_launcher.SPAWN, rc_launcher.TAKEOVER = (
+            "continue",
+            "same-dir",
+            False,
+        )
+        self._seed_desk_thread("proj")
+        self.desk = {"777": desk(os.path.join(rc_launcher.PARENT, "proj"))}
+        self.responses = spawn_ok()
+        self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
+        self.assertEqual(self.killed, [])  # RC_TAKEOVER=0 was mutation-deletable
+
     def test_takeover_sigkills_straggler(self):
         self.desk = {"111": desk(os.path.join(rc_launcher.PARENT, "proj"))}
         self.alive = {111}  # survives SIGTERM -> forces the SIGKILL path
@@ -452,11 +473,20 @@ class OrchestrationTest(unittest.TestCase):
         )  # advance time past the 5s wait without real sleeping
         real_time = rc_launcher.time.time
         rc_launcher.time.time = lambda: next(ticks, 100.0)
+        sleeps = []
+        rc_launcher.time.sleep = lambda s: sleeps.append(s)
         try:
             rc_launcher.takeover("proj")
         finally:
             rc_launcher.time.time = real_time
         self.assertIn((111, rc_launcher.signal.SIGKILL), self.killed)
+        # the grace period must actually elapse first: deleting the wait loop kept
+        # every test green while SIGKILL landed instantly
+        self.assertTrue(sleeps, "SIGKILL fired without waiting out the SIGTERM grace")
+        self.assertLess(
+            self.killed.index((111, rc_launcher.signal.SIGTERM)),
+            self.killed.index((111, rc_launcher.signal.SIGKILL)),
+        )
 
     def test_snapshot_returncode_only_git_calls_stay_bytes(self):
         # Gate lead: routing rev-parse/update-ref through _git() silently added text=True,

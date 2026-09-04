@@ -42,7 +42,7 @@ This is the whole Mac-side footprint. Take the network items to ops-notes.
 | `rc_launcher.py` + `com.matt.rc-launcher` LaunchAgent | always-on web server, one cheap process, binds `0.0.0.0:8787`, token-guarded | installed by `install.sh` |
 | `rc_healthcheck.py` + `com.matt.rc-healthcheck` LaunchAgent | login-health watchdog, runs `claude auth status` every 30 min, notifies if the OAuth login lapses | installed by `install.sh` |
 | `tmux` | holds each launched RC session | `brew install tmux` (was missing) |
-| `claude` binary | `~/.local/bin/claude` v2.1.169, logged in once via `/login` so the OAuth token is cached | present; confirm login |
+| `claude` binary | `~/.local/bin/claude` v2.1.258, logged in once via `/login` so the OAuth token is cached | present; confirm login |
 | `pmset` | `autorestart 1`, `sleep 0`, `disksleep 0` so it powers back on and stays awake | manual (sudo) |
 | auto-login | temporary, so the user session + keychain load at boot and RC can authenticate | manual (System Settings) |
 | Remote Login (SSH) | optional fallback way in | manual (System Settings) |
@@ -147,7 +147,8 @@ Toggles (set at install time, e.g. `RC_RESUME=off ./install.sh`):
 
 Resume applies to `same-dir` spawn (the default); `RC_SPAWN=worktree`/`session` always
 launch fresh, since those modes are isolated by design. Takeover uses `pgrep`/`ps`/`lsof`
-and is verified on macOS; on Linux it degrades to a no-op (resume itself still works).
+and is verified on macOS; on Linux it reads `/proc/<pid>/cwd` and should behave the
+same, but has not been exercised there — treat Linux takeover as untested, not as off.
 
 Caveat: if VS Code auto-restarts the session it just lost and reattaches, it re-creates
 the collision — close that panel rather than letting it reconnect while you drive from the
@@ -339,8 +340,8 @@ login, and it's the same lever the stale-ghost note suggests, so skip it remotel
   HTTP request; tmux gives both and lets you `tmux attach -t rc-<proj>` to see
   status/QR.
 - **`same-dir` spawn (the RC default)**, not `worktree` — most of these dirs
-  aren't git repos, and worktree mode requires git. Flip `RC_SPAWN=worktree` in
-  the plist only for repos you want isolated.
+  aren't git repos, and worktree mode requires git. Set `RC_SPAWN=worktree` at install time (`RC_SPAWN=worktree ./install.sh` writes it
+  into the service env) only for repos you want isolated.
 - **Mac needs no Tailscale** — reachability rides the router's subnet route. This
   removes the "Tailscale app must auto-start at boot on the Mac" failure mode,
   which matters for the hands-off-after-power scenario.
@@ -381,6 +382,10 @@ login, and it's the same lever the stale-ghost note suggests, so skip it remotel
   fresh cleanly under `-p`. Desktop-vs-RC sessions are told apart by exe basename
   (`claude`) + absence of `remote-control` in argv; each is tied to a project by its cwd
   (`lsof -d cwd`).
+- Re-checked 2026-09-04 against v2.1.258: `--remote-control [name]` is in `claude --help`;
+  the `remote-control` *subcommand* (`--name`/`--spawn`, used only by
+  `RC_SPAWN=worktree|session`) no longer appears in the top-level help and was not
+  re-exercised — treat those two spawn modes as unverified on current builds.
 - Projects live in `~/projects` (dozens of dirs), not `~/code`.
 - `tmux` was not installed; `install.sh` adds it.
 - `python3` for the agent: `/opt/homebrew/bin/python3`.
