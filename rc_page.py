@@ -94,7 +94,7 @@ text-align:center}
 <div id=toast></div>
 <script>
 const PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__), STARTING=new Set();
-const GITSTATES=__GITSTATES__;
+let GITSTATES=__GITSTATES__;
 const NAME_RE=/^[A-Za-z0-9._-]+$/;
 let LOGIN=__LOGIN__, STATES=__STATES__, DESK=new Set(__DESK__), noTap=0;
 const $=s=>document.querySelector(s), RK='rc_recent', PK='rc_pinned';
@@ -179,6 +179,7 @@ async function stopSess(n,isDesk){
   try{
     const r=await fetch('/stop?json=1&proj='+encodeURIComponent(n)+(isDesk?'&desk=1':''));
     const j=await r.json();
+    if(j.status==='failed'){render();toast('\\u2717 '+n+': '+(j.reason||'still running'));return;}
     if(isDesk)DESK.delete(n);else RUNNING.delete(n);
     render();
     toast(j.status==='idle'?n+' was already closed':'\\u2715 closed '+n);
@@ -207,7 +208,7 @@ async function poll(){
   try{
     const r=await fetch('/status');const j=await r.json();
     RUNNING.clear();j.running.forEach(n=>RUNNING.add(n));
-    STATES=j.states||{};DESK=new Set(j.desk||[]);
+    STATES=j.states||{};DESK=new Set(j.desk||[]);GITSTATES=j.git||GITSTATES;
     LOGIN=j.login;authBar();render();
   }catch(e){}
 }

@@ -11,6 +11,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Now — audit 2026-09-02, target 2026-09-05
 
+> **DONE 2026-09-04** — `test_resume_below_have_truncates_the_stale_tail` (have=450 not 500), `connection: close` pinned on the write-error 200 and the 403 PUT, `test_put_to_escaping_path_is_404` (the PUT path answers 403 "bad target"); truncate and `offset>have` mutants both killed on the real tree.
+
 - [ ] **Resumed-upload truncate is unpinned — a stale tail reads as stored.** rc_launcher.py:834
   `f.truncate(offset)` deletable green, and `offset > have` → `!=` at :823 green. Reproduced on
   the real code: PUT 500 bytes, re-PUT 50 at offset 400 → real `have=450`, mutant `have=500`.
@@ -23,6 +25,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
   demonstrated silent data corruption in the audit. Note gemini's proposed fix (reject
   `offset < have`) is a design change, not this pin: a lower offset is the documented
   restart path the clients rely on. (~35 lines.)
+> **DONE 2026-09-04** — fresh launch with a live desk claude kills nothing; `RC_TAKEOVER=0` on resume kills nothing; the SIGTERM grace loop must sleep before SIGKILL; `ensure_trusted` lands the flag; `RC_PROJECT=proj` in `-e`. All five mutants killed (source md5-restored, bytecode purged).
+
 - [ ] **Four load-bearing launcher paths are mutation-deletable with 127/127 green.** 54 targeted
   mutants on shadow copies: 17 red, 36 green, 1 hang. The ones that matter: rc_launcher.py:502
   takeover guard (drop `resuming` or `TAKEOVER` — a phone tap that SIGTERMs desk sessions on
@@ -33,6 +37,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
   pgrep/cwd fixture on `test_launch_fresh_success` + a `TAKEOVER=False` case asserting
   `killed == []`; assert ≥3 ticks before SIGKILL; assert `CLAUDE_JSON` gains
   `hasTrustDialogAccepted` after `launch()`; assert `RC_PROJECT=proj` in `-e` opts. (~40 lines.)
+> **DONE 2026-09-04** — `_read_token()` returns "" without the file and main() refuses to start; `grep RC_LAUNCHER_TOKEN rc_*.py` → only the `_FILE` variant remains.
+
 - [ ] **Delete the `RC_LAUNCHER_TOKEN` env fallback.** rc_launcher.py:54 — `_read_token()`
   still accepts the secret from the environment when the 0600 file is unreadable, while
   RUNBOOK:347 says the token lives nowhere else. Panel (3 of 3 models) rates this High: an
@@ -42,15 +48,21 @@ before you schedule from a stale entry: check the claim still holds, then act.
   this host carries no token — logged at the panel's severity per the dissent rule. Fix:
   drop the fallback (2 lines; the env-covered line at :54 is host-dependent in coverage
   anyway) and let a missing file fail loudly at :959.
+> **DONE 2026-09-04** — stderr-isatty half runs under `_cwd("/parent/alpha")` with a live session; the stale-PWD case uses `parent/other`; the JS 'gives up' test carries the onRetry tripwire.
+
 - [ ] **Two guard tests and one JS test are hollow.** tests/test_guard.py:141 stderr-isatty half
   never patches cwd (PROCEED regardless — run under `_cwd("/parent/alpha")` with
   `has_session_rcs=[0]`); :120-122 "stale $PWD ignored" passes with `_same_dir` deleted (use a
   stale PWD of `parent/other-project`); tests/js/rc_upload.test.cjs:118 'gives up' lacks the
   throwing `onRetry` tripwire its sibling at :95 uses, so deleting `lastHave` (rc_upload.js:52-53)
   hangs node 240s instead of failing. (~15 lines.)
+> **DONE 2026-09-04** — `serve_forever(poll_interval=0.05)` in `_harness.serve`; suite 20s → ~4s (`Ran 140 tests in 4.2s`).
+
 - [ ] **Suite spends 16.5 of 18.4s in `srv.shutdown()`.** tests/_harness.py:36 — 33 server-backed
   tests each pay `serve_forever`'s default 0.5s poll interval. `srv.serve_forever(poll_interval=0.05)`
   → ~2s suite. (1 line; verify with `time python3 -m unittest discover -s tests`.)
+> **DONE 2026-09-04** — Linux takeover reworded to "untested there"; install.sh writes `RC_SPAWN`/`RC_SNAPSHOT` into the plist/unit; pins re-verified against 2.1.258 with the subcommand caveat; retired wording, rc_guard.sh cross-ref, gradle placeholder, CHANGELOG backfill all done.
+
 - [ ] **One inverted and one half-true RUNBOOK claim, both instructions.** RUNBOOK.md:149-150
   says Linux takeover "degrades to a no-op" while rc_launcher.py:272-277 reads `/proc/<pid>/cwd`
   — never true of the code, only untested: reword to "untested on Linux". RUNBOOK.md:342 "flip
@@ -63,6 +75,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
   android/app/build.gradle.kts:21 `192.168.1.100` placeholder in a public repo → a non-subnet
   host. (~12 one-line edits.)
 
+> **DONE 2026-09-04** — all shipped except the screenshot: `json=1` dropped, `EVENT_STATE[event]` fail-loud (+test), `rows_html` → "unreadable" (pin flipped), `stopSess` honest toasts (idle / failed), `create()` `FileExistsError`, `/launch?desk=1` pinned. docs/launcher.png still needs a phone screenshot — carried in Later.
+
 - [ ] **Promoted from Later (panel: cost-of-delay ranking was backwards).** The two
   "Small-pass" batches below (all six claims re-verified TRUE this audit, ~8 fixes of 1-3
   lines each): dead `json=1` on the /create fetch; `EVENT_STATE[event]` fail-loud in the
@@ -71,7 +85,7 @@ before you schedule from a stale entry: check the claim still holds, then act.
   `/launch?desk=1` half-pin; refresh docs/launcher.png. Ship with the docs batch above.
 ## Next — audit 2026-09-02, target 2026-09-12
 
-- [x] **DONE 2026-09-04 — `rc_tmux.py` leaf, then the config leaf, then
+- [ ] **DONE 2026-09-04 — `rc_tmux.py` leaf, then the config leaf, then
   `status_payload()`, then the `rc_sessions.py` cut — in that order.** Landed as specified,
   plus `rc_share.py` and the rc_templates/rc_page/rc_files_page split; test migration rode
   along. Left open on purpose: the launcher's `stop()` still reports "stopped" without
@@ -91,7 +105,7 @@ before you schedule from a stale entry: check the claim still holds, then act.
   migration is 125 `rc_launcher.X` refs over 31 names in test_orchestration + 78 in
   test_functions + `_harness._ATTRS`. The Deferred hold condition (cluster stops moving) has been
   met since 2026-08-17: one +3-line commit in 16 days.
-- [x] **DONE 2026-09-04 — Test-suite duplication.** The six inline desk responders were
+- [ ] **DONE 2026-09-04 — Test-suite duplication.** The six inline desk responders were
   already one `respond()`; this pass took the rest — `ServerCase` and `MockedToolsCase` in
   `tests/_harness.py` now carry the server fixture and the mocked-tools setUp that four
   files were about to copy. Original entry: tests/test_orchestration.py:113-128, 137-145, 184-195, 211-226,
@@ -107,6 +121,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
   (809-898), 4× the `/files` path predicate (876, 917, 926, 938), 4× the
   urlparse/parse_qs/_authed preamble, 2× the status payload dict (885-887, 906-908):
   `_json_error`, `_is_files`, `_query` (~20 lines net). `do_GET`'s 6-branch ladder → `match`.
+> **DONE 2026-09-04** — `rc_state_hook.py --hook-command <repo>` is the one source; both scripts read it via `RC_HOOK_CMD`; `test_hook_command_is_the_single_source` asserts no copy reappears in either script.
+
 - [ ] **install.sh:55-73 / uninstall.sh:34-52 embed the same Python.** Same settings.json path
   and hook command string in both; if the string changes in one, uninstall stops matching.
   Either a tiny `rc_hook.py --install|--remove` both call, or a shared shell variable for the
@@ -230,6 +246,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
 > audit found (an `rc_tmux.py` leaf and a config leaf to avoid the `SHARE` import cycle);
 > refs now page():574-584 / /status:878-880, file 965 lines.
 
+> **DONE 2026-09-04** — landed in the a3d5576 cut plus this batch: `status_payload()` feeds page() and /status, git is in the poll, `stop()` confirms via `graceful_stop`.
+
 - [ ] **`status_payload()` then the `rc_sessions.py` cut, in that order.** The HOLD is
   lifted: the orchestration cluster's feature wave is complete (371/962 lines, eight plain
   Handler-facing calls, made *more* cuttable by `_desk_claude_pids`/`_settle_prompt`).
@@ -239,10 +257,18 @@ before you schedule from a stale entry: check the claim still holds, then act.
   extraction so the seam moves once. Test migration rides along (~430 lines of
   test_orchestration reference module functions).
 
+## Later — unscheduled
+
+- [ ] **Refresh docs/launcher.png.** Predates the session icons and desk badges (2026-08-16);
+  needs a phone screenshot of the current page dropped into `docs/`. Not doable from a
+  session.
+
 ## Later — audit 2026-08-17, unscheduled
 
 > **RE-RANKED 2026-08-17 evening** — promoted into the Next entry above (sequenced before
 > the rc_sessions.py cut).
+
+> **DONE 2026-09-04** — rc_sessions.status_payload(); /status carries `git` and the page updates `GITSTATES` on every poll.
 
 - [ ] **One `status_payload()` for page() and /status.** rc_launcher.py:557-565 vs 859-860 —
   the payload is assembled twice; symptom: GITSTATES is page-load-only, so branch/dirty badges
@@ -253,6 +279,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
 > *refs as of 2026-09-02: all four claims re-verified TRUE; rows_html OSError is now
 > rc_launcher.py:615-616, its pin tests/test_upload.py:339; launcher.png still 2026-07-17.*
 
+> **DONE 2026-09-04** — all four shipped 2026-09-04 (json=1, `EVENT_STATE[event]`, `rows_html` "unreadable" + pin, launcher.png carried).
+
 - [ ] **Small-pass batch:** drop the dead `json=1` on the `/create` fetch (rc_templates.py:223
   — the route never reads it); `EVENT_STATE[event]` instead of `.get(event, "working")` in
   rc_state_hook.py:31 (unknown event should crash the hook, not paint green); `rows_html`
@@ -262,6 +290,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
 > **RE-RANKED 2026-09-02** — promoted into the Now batch above.
 > *refs as of 2026-09-02: all re-verified TRUE; the v2.1.195 line is now RUNBOOK:376;
 > `grep FileExistsError rc_launcher.py tests/` still empty.*
+
+> **DONE 2026-09-04** — all shipped 2026-09-04 (honest desk-✕ toast, `/launch?desk=1` pin, `create()` `FileExistsError`, RUNBOOK version pins).
 
 - [ ] **Small-pass additions (2026-08-17 evening):** desk-✕ toast honesty — `stopSess`
   discards `desk_stop`'s `"idle"` status and toasts "closed" for a claude that already
@@ -355,6 +385,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
 > the right Tier-H cut by `rc_sessions.py` — the orchestration cluster is now 337/945 lines,
 > absorbed all recent growth, and faces the Handler through eight plain function calls. Hold
 > until that cluster stops moving (four commits touched it in two days).
+
+> **DONE 2026-09-04** — landed as `rc_share.py` (+ `rc_files_page.py`) in the a3d5576 cut, upload protocol as a Handler mixin.
 
 - [ ] Extract the rc-share file server into `rc_files.py`. High-impact: the confinement tests
   inject `SHARE` as a live global, and `js` / `log_event` / `MT` are shared with the launcher.

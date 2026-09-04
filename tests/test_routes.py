@@ -102,6 +102,7 @@ class RouteTest(ServerCase):
         d = json.loads(body)
         self.assertEqual(d["login"], "ok")
         self.assertIn("alpha", d["running"])
+        self.assertIn("git", d)  # badges follow the poll now, not just the page load
 
     def test_root_page_fills_placeholders(self):
         self.responses = {"auth status": proc(stdout='{"loggedIn": true}')}

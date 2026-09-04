@@ -4,6 +4,17 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-04
 
+- `stop()` confirms: it now runs `rc_tmux.graceful_stop()` (SIGINT, wait up to
+  `RC_STOP_WAIT`, kill-session only as fallback, then check) and answers "failed" with a
+  reason when the session is still alive — the ✕ used to say "stopped" after a 2s sleep
+  without looking, and the page now toasts the failure instead of clearing the dot.
+- Branch/dirty badges follow the poll: `status_payload()` carries `git` (and the project
+  list, so `page()` scans once), the page updates `GITSTATES` on every `/status`; the
+  per-project TTL cache bounds it to one `git status` per repo per window, and
+  `RC_GIT_TTL` defaults to 30s (was 15) since the poll now drives it.
+- The state-hook command string has one source: `rc_state_hook.py --hook-command <repo>`;
+  install.sh registers and uninstall.sh removes whatever it prints, and a test asserts the
+  literal never reappears in either script (they used to each embed a copy).
 - **The `rc_sessions.py` cut, and the leaves it needed** (the 2026-09-02 Next entry, in the
   order that entry specified). rc_launcher.py was 1117 lines doing eight jobs; it is now
   340 and does one — auth, routing, request framing and the /files byte-pushing. Around it:

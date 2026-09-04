@@ -243,14 +243,25 @@ class OrchestrationTest(MockedToolsCase):
         spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
         self.assertEqual(spawns, [f"{rc_sessions.CLAUDE} --remote-control proj"])
 
-    def test_stop_sigint_then_kill(self):
-        self.assertEqual(rc_sessions.stop("proj"), ("stopped", None))
+    def test_stop_sigint_then_kill_and_confirms(self):
+        # survives SIGINT: kill-session follows, and a session still alive after that
+        # is reported as failed — stop() no longer says "stopped" without looking
+        rc_config.STOP_WAIT = 0
+        self.responses = {"has-session": proc(returncode=0)}
+        self.assertEqual(
+            rc_sessions.stop("proj"),
+            ("failed", "still alive after SIGINT and kill-session"),
+        )
         cmds = self._cmds()
         sigint = next(i for i, c in enumerate(cmds) if "send-keys" in c and "C-c" in c)
         kill = next(i for i, c in enumerate(cmds) if "kill-session" in c)
-        self.assertLess(
-            sigint, kill
-        )  # SIGINT (relay deregister) MUST precede the SIGHUP kill
+        self.assertLess(sigint, kill)  # SIGINT (relay deregister) MUST precede the kill
+
+    def test_stop_reports_stopped_only_when_gone(self):
+        # dies on SIGINT: no kill-session needed, and "stopped" is a confirmed fact
+        self.responses = {"has-session": proc(returncode=1)}
+        self.assertEqual(rc_sessions.stop("proj"), ("stopped", None))
+        self.assertFalse(any("kill-session" in c for c in self._cmds()))
 
     def test_tmux_targets_are_exact_match(self):
         # A bare -t prefix-matches: with rc-proj absent and rc-proj-sub live, stop()

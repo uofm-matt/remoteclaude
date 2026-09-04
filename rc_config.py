@@ -65,8 +65,11 @@ SHARE = os.path.realpath(
     os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc-share"))
 )
 RCPART_TTL = 6 * 3600  # abandoned .rcpart uploads (no writes in this long) get swept
+STOP_WAIT = float(
+    os.environ.get("RC_STOP_WAIT", "5")
+)  # SIGINT grace before kill-session
 GIT_TTL = float(
-    os.environ.get("RC_GIT_TTL", "15")
+    os.environ.get("RC_GIT_TTL", "30")
 )  # per-project git state is cached this long
 GIT_STATUS_TIMEOUT = float(
     os.environ.get("RC_GIT_STATUS_TIMEOUT", "3")

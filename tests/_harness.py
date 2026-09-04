@@ -35,6 +35,7 @@ TOKEN = "test-token-0123456789"
 _ATTRS = {
     rc_config: (
         "SHARE",
+        "STOP_WAIT",
         "TOKEN",
         "PARENT",
         "CLAUDE_JSON",

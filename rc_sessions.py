@@ -52,13 +52,18 @@ def session_states() -> dict[str, str]:
 def status_payload() -> dict:
     """The live view the phone polls: which projects have an rc session, whether the
     login still works, each session's turn state, and the desk sessions the tmux dots
-    can't see. /status and page() both read it here so they can't drift — git state is
-    NOT in it, deliberately: it forks a git per repo and belongs to the page load."""
+    can't see, plus each repo's branch/dirty so the badges follow a remote turn instead
+    of freezing at page load. /status and page() both read it here so they can't drift.
+    Git is the expensive key — one `git status` per repo — and the per-project TTL cache
+    (cfg.GIT_TTL) bounds it to one fork per repo per window while a viewer is open."""
+    projs = cfg.projects()
     return {
+        "projects": projs,
         "running": sorted(rc_tmux.running()),
         "login": login_status(),
         "states": session_states(),
         "desk": rc_desk.desk_projects(),
+        "git": rc_git.git_states(projs),
     }
 
 
@@ -66,15 +71,15 @@ def page() -> bytes:
     """status_payload() rendered as the launcher page, plus the two things only a page
     load pays for: the project list (scanned once and shared with git_states) and the
     per-repo branch/dirty badges."""
-    projs = cfg.projects()
     live = status_payload()
+    projs = live["projects"]
     return fill(
         PAGE,
         {
             "__PROJECTS__": js(projs),
             "__RUNNING__": js(live["running"]),
             "__STATES__": js(live["states"]),
-            "__GITSTATES__": js(rc_git.git_states(projs)),
+            "__GITSTATES__": js(live["git"]),
             "__DESK__": js(live["desk"]),
             "__LOGIN__": js(live["login"]),
             "__HOST__": html.escape(cfg.HOST),
@@ -300,19 +305,14 @@ def launch(proj: str) -> tuple[str, str | None]:
 
 
 def stop(proj: str) -> tuple[str, str | None]:
+    """Close proj's rc session and say whether it is actually gone. graceful_stop()
+    SIGINTs first so claude deregisters from the relay, kills only as the fallback,
+    then confirms — so the ✕ can no longer report "stopped" over a session that lives
+    (that was the phantom-stop the 2026-09-02 audit named)."""
     sess = rc_tmux.session_name(proj)
-    # Graceful first: SIGINT the claude server (Ctrl-C to the pane's foreground
-    # process) so it can deregister from Anthropic's relay. An abrupt kill-session
-    # sends SIGHUP, which the relay can't tell apart from the Mac dropping off the
-    # network — so the app keeps showing the session "connected" until the relay's
-    # inactivity timeout (~10 min) evicts it. Give claude a moment to disconnect,
-    # then hard-kill the session as fallback. (rc_tmux.graceful_stop() is the
-    # confirming version the desk guard uses; adopting it here is a product change —
-    # this reports "stopped" without checking — tracked in TODO.md.)
-    rc_tmux.tmux("send-keys", "-t", f"={sess}", "C-c")
-    time.sleep(2)
-    rc_tmux.tmux("kill-session", "-t", f"={sess}")
-    return "stopped", None
+    if rc_tmux.graceful_stop(sess, wait=cfg.STOP_WAIT):
+        return "stopped", None
+    return "failed", "still alive after SIGINT and kill-session"
 
 
 def desk_stop(proj: str) -> tuple[str, str | None]:

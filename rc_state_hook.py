@@ -57,5 +57,17 @@ def main() -> None:
     )
 
 
+HOOK_COMMAND = '[ -n "$RC_REMOTE" ] && python3 {repo}/rc_state_hook.py; true'
+
+
+def hook_command(repo: str) -> str:
+    """The exact settings.json command install.sh registers and uninstall.sh removes —
+    one source, so the two scripts can never disagree on what to match."""
+    return HOOK_COMMAND.format(repo=repo)
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:2] == ["--hook-command"]:
+        print(hook_command(sys.argv[2]))
+    else:
+        main()

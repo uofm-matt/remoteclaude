@@ -54,12 +54,11 @@ chmod 700 "$SHARE_DIR"
 
 # 4. register the turn-state hook (guarded by $RC_REMOTE so it only fires for
 #    phone-driven sessions) for desk-side awareness of live remote turns.
-"$PY" - "$REPO" <<'PY'
-import json, os, sys
-repo = sys.argv[1]
+RC_HOOK_CMD="$("$PY" "$REPO/rc_state_hook.py" --hook-command "$REPO")" "$PY" - <<'PY'
+import json, os
 p = os.path.expanduser("~/.claude/settings.json")
 d = json.load(open(p)) if os.path.exists(p) else {}
-cmd = f'[ -n "$RC_REMOTE" ] && python3 {repo}/rc_state_hook.py; true'
+cmd = os.environ["RC_HOOK_CMD"]  # rc_state_hook.py is the one source of this string
 hooks = d.setdefault("hooks", {})
 added = False
 for ev in ["UserPromptSubmit", "Notification", "Stop", "SubagentStop", "SessionStart", "SessionEnd"]:

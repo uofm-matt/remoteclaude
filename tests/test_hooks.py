@@ -100,6 +100,20 @@ class HookTest(unittest.TestCase):
         self._hook({"hook_event_name": "SessionEnd", "session_id": "s1"})
         self.assertFalse(f.exists())  # SessionEnd removes the file
 
+    def test_hook_command_is_the_single_source(self):
+        # install.sh and uninstall.sh used to each embed this string; if one drifted the
+        # uninstaller stopped matching. Both now ask rc_state_hook.py for it, and no
+        # copy may reappear in either script.
+        cmd = rc_state_hook.hook_command("/r")
+        self.assertEqual(
+            cmd, '[ -n "$RC_REMOTE" ] && python3 /r/rc_state_hook.py; true'
+        )
+        root = Path(rc_state_hook.__file__).parent
+        for script in ("install.sh", "uninstall.sh"):
+            text = (root / script).read_text()
+            self.assertNotIn("rc_state_hook.py; true", text, script)
+            self.assertIn("--hook-command", text, script)
+
     def test_unknown_event_fails_loud(self):
         # an event the vocabulary lacks used to paint "working"; it must crash instead
         with self.assertRaises(KeyError):

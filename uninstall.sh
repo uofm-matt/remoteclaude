@@ -31,14 +31,13 @@ if [ -n "$TMUX_BIN" ] && [ -x "$TMUX_BIN" ]; then
 fi
 
 # remove the turn-state hook (leaves any other hooks, e.g. unrelated tools, intact)
-python3 - "$REPO" <<'PY' 2>/dev/null || true
+RC_HOOK_CMD="$(python3 "$REPO/rc_state_hook.py" --hook-command "$REPO")" python3 - <<'PY' 2>/dev/null || true
 import json, os, sys
-repo = sys.argv[1]
 p = os.path.expanduser("~/.claude/settings.json")
 if not os.path.exists(p):
     sys.exit(0)
 d = json.load(open(p))
-cmd = f'[ -n "$RC_REMOTE" ] && python3 {repo}/rc_state_hook.py; true'
+cmd = os.environ["RC_HOOK_CMD"]  # rc_state_hook.py is the one source of this string
 hooks = d.get("hooks", {})
 for ev in list(hooks):
     hooks[ev] = [g for g in hooks[ev]
