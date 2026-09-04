@@ -4,6 +4,9 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-04
 
+- rc_tmux's module docstring still said the launcher's `stop()` used "the older fire-and-forget
+  sequence" — true for the two hours between the cut and 64491ce, false since. Caught by
+  `/grade`'s debt-marker count (it matched the word TODO in that sentence). Tier T, doc only.
 - Gate on the quality pass: the defect subagent caught the one weakening in it — the
   `lambda *_` stub that vulture's unused-`addr` hint produced no longer pinned that
   `Server.handle_error` forwards exactly `(request, client_address)` to `super()`; the stub

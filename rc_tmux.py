@@ -3,8 +3,9 @@
 Each had grown its own binary default, its own `has-session` call and its own `rc-{proj}`
 naming; two definitions of "is that session alive" drift apart quietly, and the `=name`
 exact-match form below is the kind of hard-won detail that has to be in exactly one place.
-graceful_stop() is the guard's confirming close; the launcher's own stop() is still the
-older fire-and-forget sequence (see rc_sessions.stop and TODO.md).
+graceful_stop() is the one confirming close: the desk guard's takeover and the
+launcher's stop() (rc_sessions) both go through it, so a ✕ that reports "stopped" has
+looked.
 
 Deliberately a cheap leaf — no rc_config import, no token read, no gethostname: the guard
 runs this on every desk `claude`.
