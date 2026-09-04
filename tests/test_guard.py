@@ -5,15 +5,18 @@ is what the rc_guard.sh shim keys on, so every branch is pinned here."""
 import contextlib
 import os
 import pty
+import subprocess
 import sys
 import tempfile
 import termios
 import threading
+import time
 import unittest
 import unittest.mock
 from types import SimpleNamespace
 
 import rc_guard
+import rc_tmux
 
 from tests._harness import proc
 
@@ -38,12 +41,13 @@ class GuardHarness(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         for obj, name in (
-            (rc_guard.subprocess, "run"),
-            (rc_guard.time, "sleep"),
+            (subprocess, "run"),
+            (time, "sleep"),
             (rc_guard, "read_key"),
             (rc_guard, "state_tag"),
             (rc_guard, "PARENT"),
             (rc_guard, "TAKEOVER_WAIT"),
+            (rc_tmux, "TMUX"),
         ):
             self.addCleanup(setattr, obj, name, getattr(obj, name))
         self.addCleanup(os.environ.pop, "TMUX", None)
@@ -58,11 +62,14 @@ class GuardHarness(unittest.TestCase):
                 return proc(returncode=rc)
             return proc()
 
-        rc_guard.subprocess.run = run
-        rc_guard.time.sleep = lambda s: None
+        subprocess.run = run
+        time.sleep = lambda s: None
         rc_guard.state_tag = lambda: ""
         rc_guard.PARENT = "/parent"
         rc_guard.TAKEOVER_WAIT = 0.01
+        # the assertions below spell the argv out, and the real default is whichever
+        # tmux this host resolved at import (/opt/homebrew/bin/tmux on the Mac)
+        rc_tmux.TMUX = "tmux"
 
     def _cmds(self):
         return [" ".join(c) for c in self.calls]
@@ -133,7 +140,7 @@ class DetectionTest(GuardHarness):
         def run(cmd, **kw):
             raise FileNotFoundError(cmd[0])
 
-        rc_guard.subprocess.run = run
+        subprocess.run = run
         self.assertIsNone(rc_guard.live_sess("/parent/alpha", "/parent"))
         with _cwd("/parent/alpha"):
             self.assertEqual(rc_guard.main([]), rc_guard.PROCEED)
@@ -186,7 +193,7 @@ class HelpersTest(GuardHarness):
             seen.append((cmd, kw))
             return proc(stdout="● rc:working\n")
 
-        rc_guard.subprocess.run = run
+        subprocess.run = run
         self.assertEqual(self.real_state_tag(), "● rc:working")
         cmd, kw = seen[0]
         self.assertEqual(cmd[0], sys.executable)
@@ -195,9 +202,9 @@ class HelpersTest(GuardHarness):
 
     def test_state_tag_timeout_is_empty_not_a_hang(self):
         def run(cmd, **kw):
-            raise rc_guard.subprocess.TimeoutExpired(cmd, kw["timeout"])
+            raise subprocess.TimeoutExpired(cmd, kw["timeout"])
 
-        rc_guard.subprocess.run = run
+        subprocess.run = run
         self.assertEqual(self.real_state_tag(), "")
 
     def test_read_key_single_byte_from_a_real_pty(self):

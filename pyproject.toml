@@ -1,11 +1,19 @@
 # Minimal pyproject — not a packaged project (no [project] table). Carries the ruff lint
 # floor and the bandit config that CI enforces.
 [tool.coverage.run]
-# The project's measured set — the eight shipped modules, so a bare `coverage run`
-# measures the same thing CI's explicit --source does (and tooling that reads
-# coverage config sees a configured set, not "whatever the suite imported").
-source = ["rc_launcher", "rc_claude", "rc_state", "rc_templates", "rc_status",
-          "rc_state_hook", "rc_healthcheck", "rc_guard"]
+# The project's measured set — every shipped module, so a bare `coverage run` measures the
+# same thing CI's explicit --source does (and tooling that reads coverage config sees a
+# configured set, not "whatever the suite imported"). Grouped as the import graph layers:
+source = [
+    # leaves
+    "rc_claude", "rc_state", "rc_templates", "rc_tmux",
+    # settings, then the process probes built on them
+    "rc_config", "rc_desk", "rc_git",
+    # the launcher's two clusters and its web tier
+    "rc_sessions", "rc_share", "rc_launcher", "rc_page", "rc_files_page",
+    # standalone entry points
+    "rc_status", "rc_state_hook", "rc_healthcheck", "rc_guard",
+]
 
 [tool.ruff]
 line-length = 88

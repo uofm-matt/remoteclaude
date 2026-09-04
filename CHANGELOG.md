@@ -4,6 +4,61 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-04
 
+- **The `rc_sessions.py` cut, and the leaves it needed** (the 2026-09-02 Next entry, in the
+  order that entry specified). rc_launcher.py was 1117 lines doing eight jobs; it is now
+  340 and does one — auth, routing, request framing and the /files byte-pushing. Around it:
+  `rc_config.py` (every env-derived setting, `log_event`, `projects()`, one `ttl_cached`
+  decorator), `rc_tmux.py` (the binary, `tmux()`, `session_name`, `has_session`,
+  `graceful_stop`), `rc_git.py` (branch/dirty + the opt-in snapshot), `rc_desk.py` (the
+  desk-claude scan and takeover), `rc_sessions.py` (starting, describing and closing the
+  sessions a tap drives) and `rc_share.py` (the ~/rc-share boundary, its listing, the
+  `.rcpart` sweep). rc_templates.py keeps only what both pages share plus `fill()`/`js()`;
+  `rc_page.py` and `rc_files_page.py` hold one template each (verified byte-identical to
+  the pre-split constants). The import graph is acyclic and layered — rc_config is what
+  makes that possible: `launch()` reads `SHARE` and both clusters need
+  `log_event`/`projects()`/`NAME_RE` plus the env globals, so extracting a cluster while
+  importing those from the launcher would have been the repo's only cycle. No behavior
+  change: 138 tests green before and after, and a live launcher was driven end to end
+  (page renders with no unfilled placeholder, /status, /files, a finalized upload, a 403
+  logged path-only).
+  - Folded in along the way, all from the same entry: `PARENT` is realpath'd the way
+    `SHARE` already was (the desk scan and takeover compare physical cwds read back from
+    lsof and /proc, so a symlinked or trailing-slashed `~/projects` silently matched
+    nothing); the three TTL caches the launcher had grown in three shapes (an lru_cache
+    over a time bucket, a dict+lock keyed per project, a tuple+lock+hand-rolled
+    invalidate) are one `ttl_cached` decorator with a uniform `.invalidate()`; one
+    `status_payload()` now feeds both `page()` and `/status`, which were assembling the
+    same four keys twice. `rc_guard.py` drops its second `RC_TMUX_BIN` default, its own
+    `has-session` call, its own `rc-{proj}` and its own graceful stop, and calls
+    `rc_tmux` — the second real consumer that justified that leaf.
+  - **Deviation to note:** the login probe was an `lru_cache` over a 60s wall-clock bucket
+    and is now a rolling 60s TTL (`cfg.LOGIN_TTL`, still hardcoded — it is the one TTL
+    without an env knob). Same cost profile and the same reason
+    for existing, but the expiry is per-entry-age rather than aligned to the minute, so a
+    probe taken at :59 now lives to the next :59 instead of expiring at :00.
+  - Not changed, deliberately: the launcher's `stop()` still sleeps 2s and reports
+    "stopped" without confirming, rather than adopting `rc_tmux.graceful_stop()`. That is
+    a product change (the desk-✕ toast item), not a refactor, so it stays in TODO.md.
+- Tests follow the source seams: `tests/test_git.py` (the branch/dirty parse, both
+  degradations, the cache on both sides, snapshot), `tests/test_desk.py` (the probe scan,
+  the cwd boundary, takeover escalation, the TTL), `tests/test_routes.py` (the launcher's
+  own routes plus the share page) and `tests/test_files_auth.py` (the gate and its
+  keep-alive framing) split out of test_functions/test_orchestration/test_upload; every
+  test name is preserved and no assertion was weakened. Two fixtures moved into
+  `tests/_harness.py` — `ServerCase` (the loopback server, a tmp SHARE and a known token)
+  and `MockedToolsCase` (the whole mocked tmux/git/pgrep world) — which is what let those
+  files split without copying a 45-line setUp four times. `restore_globals()` now also
+  empties the three TTL caches on both sides of each test, replacing three different
+  hand-rolled cache pokes (`_git_cache.clear()`, `_desk_cache = (0.0, [])`,
+  `_login_status.cache_clear()`); the desk-stop test asserts the badge rescans on the next
+  poll rather than reading a private cache tuple. No tracked .py is over 350 lines now
+  (was 1117 and 538).
+- Coverage: the measured set in pyproject and ci.yml is all sixteen shipped modules, and
+  every one clears the per-file floor (98% aggregate, lowest file 93%). The comment shapes
+  `ruff format` had left as three-line `if (\n cond\n ):` blocks in the handler were
+  unwrapped with the comment moved above the line, as the 09-04 formatting note asked.
+
+
 - Audit Now batch (2026-09-02's paydown, all seven entries): the resumed-upload truncate
   is pinned (a re-PUT below `have` must leave `have=450`, not report the stale tail as
   stored) along with `connection: close` on the write-error 200 and the 403 PUT, and a

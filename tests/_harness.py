@@ -1,43 +1,67 @@
-"""Shared test scaffolding: one proc() factory (replacing an earlier proc/_proc split),
-respond()/desk() — the one canned answer for the pgrep/ps/lsof probes that six tests
-used to re-implement inline — and restore_globals(), which snapshots every rc_launcher
-module attribute / stdlib singleton a test may reassign and restores it via addCleanup,
-so a mutated global can't leak into a later test regardless of run order. (This file is
-not collected: discover only runs test*.py.)"""
+"""Shared test scaffolding.
 
+proc()/desk()/respond() are the one canned answer for the mocked subprocess world — the
+tmux control calls and the pgrep/ps/lsof desk probes that six tests used to re-implement
+inline. restore_globals() snapshots every module attribute and stdlib singleton a test may
+reassign and restores it via addCleanup, so a mutated global can't leak into a later test
+regardless of run order. ServerCase is the loopback-server fixture the handler-level tests
+drive. (This file is not collected: discover only runs test*.py.)
+"""
+
+import http.client
 import os
 import shutil
+import subprocess
 import tempfile
 import threading
+import time
+import unittest
 import unittest.mock
 from itertools import pairwise
 from types import SimpleNamespace
 
+import rc_config
+import rc_desk
+import rc_git
 import rc_launcher
+import rc_sessions
+from pathlib import Path
 
-# module attrs tests reassign (SHARE/TOKEN/... and the launch-mode flags)
-_ATTRS = (
-    "SHARE",
-    "TOKEN",
-    "PARENT",
-    "STATE_DIR",
-    "CLAUDE_JSON",
-    "CLAUDE_PROJECTS",
-    "RESUME",
-    "SPAWN",
-    "TAKEOVER",
-    "log_event",
-    "_desk_cache",
-)
-# stdlib singletons the subprocess-mock rebinds (rc_launcher.subprocess IS the module object)
+TOKEN = "test-token-0123456789"
+
+# Module attrs tests reassign, under the module that owns each one now. The source reads
+# them as `cfg.NAME`, never `from rc_config import NAME` — one binding per name is what
+# lets a test redirect PARENT or SHARE once and have every module follow.
+_ATTRS = {
+    rc_config: (
+        "SHARE",
+        "TOKEN",
+        "PARENT",
+        "CLAUDE_JSON",
+        "CLAUDE_PROJECTS",
+        "RESUME",
+        "SPAWN",
+        "TAKEOVER",
+        "GIT",
+        "GIT_TTL",
+        "DESK_TTL",
+        "log_event",
+    ),
+    rc_sessions: ("STATE_DIR",),
+}
+# Stdlib singletons the subprocess-mock rebinds. These are the very module objects every
+# rc_* module imported, so one patch here reaches all of them at once.
 _STDLIB = (
-    (rc_launcher.subprocess, "run"),
-    (rc_launcher.os, "kill"),
-    (rc_launcher.time, "sleep"),
-    (rc_launcher.time, "time"),
-    (rc_launcher.os.path, "islink"),
-    (rc_launcher.os, "readlink"),
+    (subprocess, "run"),
+    (os, "kill"),
+    (time, "sleep"),
+    (time, "time"),
+    (os.path, "islink"),
+    (os, "readlink"),
 )
+# TTL caches keyed on project names — and names repeat across each test's tmp PARENT, so a
+# warm entry from an earlier test would otherwise answer for a different directory.
+_CACHES = (rc_git.git_state, rc_desk.desk_projects, rc_sessions.login_status)
 
 
 def proc(returncode=0, stdout="", stderr=""):
@@ -74,12 +98,17 @@ def respond(cmd, desk_procs, responses):
 
 
 def restore_globals(tc):
-    """Register addCleanup handlers that restore every mutable rc_launcher global and rebindable
-    stdlib singleton to its current value. Call first in setUp, before the test mutates them."""
-    for name in _ATTRS:
-        tc.addCleanup(setattr, rc_launcher, name, getattr(rc_launcher, name))
+    """Register addCleanup handlers that restore every mutable module global and rebindable
+    stdlib singleton to its current value, and empty the TTL caches on both sides of the
+    test. Call first in setUp, before the test mutates them."""
+    for module, names in _ATTRS.items():
+        for name in names:
+            tc.addCleanup(setattr, module, name, getattr(module, name))
     for obj, name in _STDLIB:
         tc.addCleanup(setattr, obj, name, getattr(obj, name))
+    for cache in _CACHES:
+        cache.invalidate()
+        tc.addCleanup(cache.invalidate)
 
 
 def share_dir(tc):
@@ -115,3 +144,78 @@ def serve(tc):
     tc.addCleanup(srv.server_close)
     tc.addCleanup(srv.shutdown)
     return srv.server_address[1]
+
+
+class ServerCase(unittest.TestCase):
+    """The real Handler over a loopback server, with a tmp SHARE and a known token — the
+    same contract a browser/app client speaks. Subclasses extend setUp with whatever extra
+    globals their routes read."""
+
+    def setUp(self):
+        restore_globals(self)
+        self.share = rc_config.SHARE = share_dir(self)
+        rc_config.TOKEN = TOKEN
+        rc_config.log_event = lambda *a: None  # keep test traffic out of the real log
+        self.port = serve(self)
+
+    def req(self, method, path, body=None, headers=None, cookie=True):
+        """One request; returns (status, lowercased response headers, body bytes)."""
+        h = dict(headers or {})
+        if cookie:
+            h.setdefault("Cookie", f"rc_token={TOKEN}")
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request(method, path, body=body, headers=h)
+        r = c.getresponse()
+        data = r.read()
+        hdrs = {k.lower(): v for k, v in r.getheaders()}
+        c.close()
+        return r.status, hdrs, data
+
+
+class MockedToolsCase(unittest.TestCase):
+    """Every tmux / git / pgrep / ps / lsof call answered from a table instead of a real
+    process, with os.kill and time.sleep neutered — so launch, stop and takeover can be
+    exercised without spawning or signalling anything. Set self.responses (command
+    substring -> proc(...)), self.desk ({pid: desk(...)}) and self.alive (pids that
+    survive a SIGTERM); read self.calls and self.killed back."""
+
+    def setUp(self):
+        # snapshot + auto-restore every global/singleton reassigned below
+        restore_globals(self)
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        rc_config.PARENT = os.path.join(self.tmp, "projects")
+        os.makedirs(os.path.join(rc_config.PARENT, "proj"))
+        rc_config.CLAUDE_JSON = os.path.join(self.tmp, "claude.json")
+        Path(rc_config.CLAUDE_JSON).write_text("{}")
+        # empty: no desk thread
+        rc_config.CLAUDE_PROJECTS = Path(self.tmp, "claude-projects")
+        rc_config.log_event = lambda *a: None
+        self.calls: list = []
+        self.responses: dict = {}
+        self.desk: dict = {}
+        self.killed: list = []  # (pid, sig) seen by os.kill
+        self.alive: set = set()  # pids that os.kill(pid, 0) should treat as alive
+        subprocess.run = self._run
+        os.kill = self._kill
+        time.sleep = lambda *a: None
+        # force _pid_cwd down the (mocked) lsof path — on Linux it would read the runner's
+        # real /proc/<pid>/cwd and bypass the mock entirely
+        os.path.islink = lambda p: False
+
+    def _run(self, cmd, **kw):
+        self.calls.append(cmd)
+        return respond(cmd, self.desk, self.responses)
+
+    def _kill(self, pid, sig):
+        self.killed.append((pid, sig))
+        if sig == 0 and pid not in self.alive:
+            raise ProcessLookupError
+
+    def _cmds(self) -> list[str]:
+        return [" ".join(map(str, c)) for c in self.calls]
+
+    def _pgreps(self) -> int:
+        """How many desk scans have actually forked pgrep — the observable the TTL cache
+        tests assert on."""
+        return len([c for c in self._cmds() if "pgrep" in c])

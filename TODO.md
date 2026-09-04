@@ -71,8 +71,12 @@ before you schedule from a stale entry: check the claim still holds, then act.
   `/launch?desk=1` half-pin; refresh docs/launcher.png. Ship with the docs batch above.
 ## Next — audit 2026-09-02, target 2026-09-12
 
-- [ ] **`rc_tmux.py` leaf, then the config leaf, then `status_payload()`, then the
-  `rc_sessions.py` cut — in that order.** The guard added a second graceful-stop
+- [x] **DONE 2026-09-04 — `rc_tmux.py` leaf, then the config leaf, then
+  `status_payload()`, then the `rc_sessions.py` cut — in that order.** Landed as specified,
+  plus `rc_share.py` and the rc_templates/rc_page/rc_files_page split; test migration rode
+  along. Left open on purpose: the launcher's `stop()` still reports "stopped" without
+  confirming — adopting `rc_tmux.graceful_stop()` there is the desk-✕ toast product change,
+  tracked separately below. Original entry: The guard added a second graceful-stop
   (rc_guard.py:151-163 polls `has-session` and refuses if alive; rc_launcher.py:523-526 sleeps 2s
   and always says "stopped"), a second `RC_TMUX_BIN` default ("tmux" vs "/opt/homebrew/bin/tmux",
   rc_guard.py:24 / rc_launcher.py:44), 5 raw tmux `subprocess.run`s beside the launcher's
@@ -87,13 +91,19 @@ before you schedule from a stale entry: check the claim still holds, then act.
   migration is 125 `rc_launcher.X` refs over 31 names in test_orchestration + 78 in
   test_functions + `_harness._ATTRS`. The Deferred hold condition (cluster stops moving) has been
   met since 2026-08-17: one +3-line commit in 16 days.
-- [ ] **Test-suite duplication.** tests/test_orchestration.py:113-128, 137-145, 184-195, 211-226,
+- [x] **DONE 2026-09-04 — Test-suite duplication.** The six inline desk responders were
+  already one `respond()`; this pass took the rest — `ServerCase` and `MockedToolsCase` in
+  `tests/_harness.py` now carry the server fixture and the mocked-tools setUp that four
+  files were about to copy. Original entry: tests/test_orchestration.py:113-128, 137-145, 184-195, 211-226,
   414-422, 443-460 — six inline `run(cmd, **kw)` closures re-implementing the same
   pgrep/comm/command/-Fn desk-claude responder (~70 lines; pylint's duplicate-code misses them
   because each differs by a line). One `_desk_claude(pids, root)` responder that plugs into
   `self.responses` (which already accepts callables). Same pass: the `share = mkdtemp` +
   rmtree setUp ×5 and the `LIVE_SPAWN` responses dict ×6 into `_harness`. (~-60 lines.)
-- [ ] **Handler repetition.** rc_launcher.py — 7× `self._send(<code>, b'{"error":...}', json)`
+- [x] **DONE (2026-09-02 for the eight sites, 2026-09-04 for the rest).** `_json_error`,
+  `_is_files` and the `match` landed then; the /launch|/stop and /create arms are now
+  `_session_verb`/`_create` and the status payload is assembled once in
+  `rc_sessions.status_payload()`. Original entry: rc_launcher.py — 7× `self._send(<code>, b'{"error":...}', json)`
   (809-898), 4× the `/files` path predicate (876, 917, 926, 938), 4× the
   urlparse/parse_qs/_authed preamble, 2× the status payload dict (885-887, 906-908):
   `_json_error`, `_is_files`, `_query` (~20 lines net). `do_GET`'s 6-branch ladder → `match`.

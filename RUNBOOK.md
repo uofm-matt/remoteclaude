@@ -47,6 +47,34 @@ This is the whole Mac-side footprint. Take the network items to ops-notes.
 | auto-login | temporary, so the user session + keychain load at boot and RC can authenticate | manual (System Settings) |
 | Remote Login (SSH) | optional fallback way in | manual (System Settings) |
 
+## Module map
+
+One job per file, and the import graph is acyclic — every arrow points down this table, so
+a change to a leaf can't reach back into the launcher.
+
+| Module | Its one job | Imports |
+|---|---|---|
+| `rc_claude.py` | the `claude` binary path, the `claude auth status` contract, MT | — |
+| `rc_state.py` | the turn-state vocabulary (names, rank, dir, TTL) shared by hook/status/launcher | — |
+| `rc_tmux.py` | tmux spoken once: the binary, `tmux()`, session naming, `has_session`, `graceful_stop` | — |
+| `rc_templates.py` | the chunks both pages share, plus `fill()`/`js()` | — |
+| `rc_page.py`, `rc_files_page.py` | one page template each, spliced at import | `rc_templates` |
+| `rc_config.py` | every env-derived setting, `log_event`, `projects()`, the TTL-cache decorator | `rc_claude` |
+| `rc_git.py` | per-project branch/dirty for the badges, and the opt-in `RC_SNAPSHOT` checkpoint | `rc_config` |
+| `rc_desk.py` | finding, badging and closing desk (non-remote) claude sessions | `rc_config` |
+| `rc_sessions.py` | starting, describing and closing the sessions a phone tap drives | the four above |
+| `rc_share.py` | the `~/rc-share` boundary, its listing, and the `.rcpart` sweep | `rc_config`, page |
+| `rc_launcher.py` | the HTTP tier: auth, routing, framing, `/files` byte-pushing | `rc_sessions`, `rc_share` |
+| `rc_guard.py` | the desk-side launch guard (attach / takeover / fresh) | `rc_tmux` |
+| `rc_status.py`, `rc_state_hook.py`, `rc_healthcheck.py` | standalone entry points: prompt tag, hook writer, login watchdog | `rc_state` / `rc_claude` |
+
+`rc_config` exists so the session and file-share clusters can be separate modules at all:
+`launch()` reads `SHARE` and both clusters need `log_event`/`projects()`/`NAME_RE` plus the
+env globals, so extracting a cluster while importing those from the launcher would have
+made this repo's only import cycle. Read settings as `cfg.NAME` at call time, never
+`from rc_config import NAME` — one binding per name is what lets a test (or the service)
+redirect `PARENT` or `SHARE` once and have every module follow.
+
 ## Ops-notes (network side — not the Mac)
 
 - **DHCP reservation** for the Mac (`<mac-lan-ip>`) so the bookmarked URL stays

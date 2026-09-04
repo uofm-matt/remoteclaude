@@ -84,7 +84,10 @@ so the launcher only handles switching between projects.
 
 | File | Role |
 |---|---|
-| `rc_launcher.py` | Token-guarded web server: launch, stop, live status, create-new-project, and `/files` browse/download/upload of `~/rc-share`. Runs under launchd (macOS) or systemd --user (Linux). |
+| `rc_launcher.py` | Token-guarded web server: launch, stop, live status, create-new-project, and `/files` browse/download/upload of `~/rc-share`. Runs under launchd (macOS) or systemd --user (Linux). The HTTP tier only — the work behind each route lives in the modules below. |
+| `rc_sessions.py` / `rc_share.py` | The launcher's two clusters: starting, describing and closing phone-driven sessions; and the `~/rc-share` file share (what a path may reach, how a directory is listed, the abandoned-upload sweep). |
+| `rc_config.py` / `rc_tmux.py` / `rc_git.py` / `rc_desk.py` | Leaves both clusters share: every env-derived setting plus the audit log and TTL cache; the tmux verbs (also used by `rc_guard.py`); per-project branch/dirty and the opt-in snapshot; the desk-claude scan and takeover. |
+| `rc_templates.py` / `rc_page.py` / `rc_files_page.py` | The embedded frontend: the chunks both pages share and the per-request fill, then one file per page. |
 | `rc_state_hook.py` | Claude hook recording a remote session's turn state (working/waiting/idle) for desk-side awareness. |
 | `rc_status.py` / `rc_prompt.zsh` | Reader + opt-in zsh prompt tag showing when a remote turn is live in your current repo. |
 | `rc_guard.py` / `rc_guard.sh` | Opt-in desk-side launch guard (logic in Python, one shim for bash and zsh): wraps your `claude` so it offers attach / takeover / fresh instead of launching blind into a live phone session's thread. |

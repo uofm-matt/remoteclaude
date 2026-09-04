@@ -18,10 +18,10 @@ import os
 import subprocess
 import sys
 import termios
-import time
 import tty
 
-TMUX = os.environ.get("RC_TMUX_BIN", "tmux")
+import rc_tmux
+
 PARENT = os.path.expanduser(os.environ.get("RC_PROJECTS_PARENT", "~/projects"))
 TAKEOVER_WAIT = 5.0  # seconds to let claude exit on SIGINT before kill-session
 
@@ -97,15 +97,10 @@ def live_sess(cwd: str, parent: str) -> str | None:
         return None
     inside, root = hit
     proj = inside[len(root) :].split(os.sep, 1)[0]
-    sess = f"rc-{proj}"
+    sess = rc_tmux.session_name(proj)
     with contextlib.suppress(FileNotFoundError):
-        return sess if session_alive(sess) else None
+        return sess if rc_tmux.has_session(sess) else None
     return None
-
-
-def session_alive(sess: str) -> bool:
-    r = subprocess.run([TMUX, "has-session", "-t", f"={sess}"], capture_output=True)
-    return r.returncode == 0
 
 
 def read_key() -> str:
@@ -134,31 +129,23 @@ def state_tag() -> str:
 
 
 def attach(sess: str) -> None:
-    # Inside an existing tmux client, attach refuses ("sessions should be nested
-    # with care"); switch-client is the in-tmux equivalent.
+    # Inside an existing tmux client, attach refuses ("sessions should be nested with
+    # care"); switch-client is the in-tmux equivalent. Not rc_tmux.tmux(): that captures
+    # output, and an attach has to own the terminal.
     verb = "switch-client" if os.environ.get("TMUX") else "attach"
-    subprocess.run([TMUX, verb, "-t", f"={sess}"])
+    subprocess.run([rc_tmux.TMUX, verb, "-t", f"={sess}"])
 
 
 def takeover(sess: str) -> int:
-    """Mirror the launcher's stop(): SIGINT so claude deregisters from the relay and
-    flushes its transcript, wait for the pane to actually exit, kill-session only as
-    the fallback — then confirm. The caller's normal --continue resumes the same
-    thread at the desk; if the session is somehow still alive, refuse to launch
-    into it."""
-    subprocess.run([TMUX, "send-keys", "-t", f"={sess}", "C-c"], capture_output=True)
-    deadline = time.monotonic() + TAKEOVER_WAIT
-    while session_alive(sess) and time.monotonic() < deadline:
-        time.sleep(0.25)
-    if session_alive(sess):
-        subprocess.run([TMUX, "kill-session", "-t", f"={sess}"], capture_output=True)
-    if session_alive(sess):
-        print(
-            f"{sess} is still alive after SIGINT and kill-session; not launching.",
-            file=sys.stderr,
-        )
-        return ABORT
-    return PROCEED
+    """Close the remote session so the caller's normal --continue resumes the same
+    thread at the desk. If it somehow survives, refuse to launch into it."""
+    if rc_tmux.graceful_stop(sess, TAKEOVER_WAIT):
+        return PROCEED
+    print(
+        f"{sess} is still alive after SIGINT and kill-session; not launching.",
+        file=sys.stderr,
+    )
+    return ABORT
 
 
 def main(argv: list[str]) -> int:

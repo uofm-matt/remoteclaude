@@ -1,0 +1,137 @@
+"""Every env-derived setting the launcher reads, plus the audit log line, the project
+listing and the TTL cache decorator the rest of the tree shares.
+
+Split out of rc_launcher.py so the git / desk / session / file-share clusters can be their
+own modules: launch() needs SHARE and both clusters need log_event, NAME_RE and the env
+globals, so extracting a cluster while importing them from the launcher would have made
+this repo's only import cycle. Read these as `cfg.NAME` at call time, never
+`from rc_config import NAME` — one binding per name is what lets a test redirect PARENT or
+SHARE once and have every module follow.
+
+Defaults match this machine; the LaunchAgent sets the rest. Refuses nothing here: the
+server checks for the token at startup.
+"""
+
+import contextlib
+import functools
+import os
+import re
+import socket
+import threading
+import time
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
+
+from rc_claude import MT
+
+# realpath'd, like SHARE below: the desk scan and takeover compare cwds read back from
+# lsof / /proc (always physical) against this prefix, and a symlinked or trailing-slashed
+# ~/projects would silently match nothing.
+PARENT = os.path.realpath(
+    os.path.expanduser(os.environ.get("RC_PROJECTS_PARENT", "~/projects"))
+)
+GIT = os.environ.get("RC_GIT_BIN", "git")
+
+
+def _read_token() -> str:
+    """Auth token from the 0600 file install.sh writes — the only place it lives. The
+    service files stopped carrying the secret, so `launchctl print` / `systemctl show`
+    can't leak it and rotation is write-file + kickstart, no plist surgery. No env
+    fallback: an env-carried token is readable via ps/launchctl and inherited by every
+    child of the HTTP process — the channel the 2026-08-16 remediation closed."""
+    tf = Path(
+        os.path.expanduser(
+            os.environ.get("RC_LAUNCHER_TOKEN_FILE", "~/.config/rc-launcher/token")
+        )
+    )
+    with contextlib.suppress(OSError):
+        return tf.read_text().strip()
+    return ""
+
+
+TOKEN = _read_token()
+PORT = int(os.environ.get("RC_LAUNCHER_PORT", "8787"))
+BIND = os.environ.get("RC_LAUNCHER_BIND", "0.0.0.0")
+SPAWN = os.environ.get("RC_SPAWN", "same-dir")  # same-dir | worktree | session
+RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
+TAKEOVER = os.environ.get("RC_TAKEOVER", "1") not in ("0", "off", "")
+HOST = socket.gethostname().split(".")[0]
+CLAUDE_JSON = os.path.expanduser("~/.claude.json")
+CLAUDE_PROJECTS = Path(
+    os.path.expanduser("~/.claude/projects")
+)  # per-project transcripts
+SHARE = os.path.realpath(
+    os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc-share"))
+)
+RCPART_TTL = 6 * 3600  # abandoned .rcpart uploads (no writes in this long) get swept
+GIT_TTL = float(
+    os.environ.get("RC_GIT_TTL", "15")
+)  # per-project git state is cached this long
+GIT_STATUS_TIMEOUT = float(
+    os.environ.get("RC_GIT_STATUS_TIMEOUT", "3")
+)  # cap a hung `git status`
+DESK_TTL = float(
+    os.environ.get("RC_DESK_TTL", "10")
+)  # desk-session scan is cached this long
+LOGIN_TTL = 60.0  # `claude auth status` spawns a process; the phone polls every 5s
+
+NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def log_event(action: str, proj: str, result: str) -> None:
+    """One audit line per launch/stop to StandardOutPath (/tmp/rc-launcher.log)."""
+    print(
+        f"{datetime.now(MT):%Y-%m-%d %H:%M:%S} MT  {action:<6} {proj} -> {result}",
+        flush=True,
+    )
+
+
+def projects() -> list[str]:
+    try:
+        entries = os.listdir(PARENT)
+    except FileNotFoundError:
+        return []
+    return sorted(
+        e
+        for e in entries
+        if NAME_RE.match(e) and os.path.isdir(os.path.join(PARENT, e))
+    )
+
+
+def ttl_cached[T](
+    ttl: Callable[[], float],
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """Cache the wrapped function's result per positional-argument tuple for ttl() seconds,
+    with an .invalidate() that drops every entry.
+
+    One decorator for the three caches the launcher had grown in three shapes (an lru_cache
+    over a time bucket for the login probe, a dict+lock keyed per project for git state, a
+    tuple+lock+hand-rolled invalidate for the desk scan) — they cache for the same reason:
+    the phone polls /status every few seconds and each of these forks a process. ttl is a
+    callable, read per call, so a test can set the TTL to 0 and force a rescan.
+    """
+
+    def decorate(fn: Callable[..., T]) -> Callable[..., T]:
+        cache: dict[tuple, tuple[float, T]] = {}
+        lock = threading.Lock()
+
+        @functools.wraps(fn)
+        def cached(*args) -> T:
+            now = time.monotonic()
+            with lock:
+                if (hit := cache.get(args)) and hit[0] > now:
+                    return hit[1]
+            value = fn(*args)
+            with lock:
+                cache[args] = (now + ttl(), value)
+            return value
+
+        def invalidate() -> None:
+            with lock:
+                cache.clear()
+
+        cached.invalidate = invalidate
+        return cached
+
+    return decorate
