@@ -3,23 +3,19 @@ arbitrary paths, so it gets a test. share_target() must resolve only inside SHAR
 within_share() must not be fooled by a sibling-prefix directory."""
 
 import os
-import shutil
 import tempfile
 import unittest
 
 import rc_launcher
 
-from tests._harness import restore_globals
+from tests._harness import restore_globals, share_dir
 
 
 class ConfinementTest(unittest.TestCase):
     def setUp(self):
         restore_globals(self)
-        self.share = os.path.realpath(tempfile.mkdtemp())
-        rc_launcher.SHARE = self.share  # the module reads SHARE as a global on every call
-
-    def tearDown(self):
-        shutil.rmtree(self.share, ignore_errors=True)
+        # the module reads SHARE as a global on every call
+        self.share = rc_launcher.SHARE = share_dir(self)
 
     def test_allows_inside(self):
         open(os.path.join(self.share, "a.txt"), "w").close()

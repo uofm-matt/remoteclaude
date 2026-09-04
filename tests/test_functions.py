@@ -18,7 +18,7 @@ from pathlib import Path
 import rc_launcher
 import rc_state
 
-from tests._harness import restore_globals
+from tests._harness import env, restore_globals
 
 _REAL_LOG = rc_launcher.log_event  # captured before any test stubs it
 
@@ -312,9 +312,8 @@ class FunctionTest(unittest.TestCase):
 
     def test_snapshot_creates_ref_when_enabled(self):
         path = self._proj("repo")
-        ident = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-        os.environ.update(ident)
+        env(self, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+            GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
 
         def git(*a):
             return subprocess.run(["git", "-C", path, *a], capture_output=True, text=True)
@@ -324,12 +323,8 @@ class FunctionTest(unittest.TestCase):
         git("add", "f.txt")
         git("commit", "-q", "-m", "init")
         Path(path, "f.txt").write_text("b")  # a dirty tracked change for `stash create`
-        os.environ["RC_SNAPSHOT"] = "1"
-        try:
-            ref = rc_launcher.snapshot("repo")
-        finally:
-            for k in (*ident, "RC_SNAPSHOT"):
-                os.environ.pop(k, None)
+        env(self, RC_SNAPSHOT="1")
+        ref = rc_launcher.snapshot("repo")
         self.assertIsNotNone(ref)
         self.assertTrue(ref.startswith("refs/rc-snapshots/repo/"))
         self.assertEqual(git("rev-parse", "--verify", ref).returncode, 0)

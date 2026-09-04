@@ -34,6 +34,7 @@ from datetime import datetime
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import MappingProxyType
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from rc_claude import CLAUDE, MT, auth_status
@@ -43,6 +44,8 @@ from rc_templates import FILES_PAGE, PAGE
 PARENT = os.path.expanduser(os.environ.get("RC_PROJECTS_PARENT", "~/projects"))
 TMUX = os.environ.get("RC_TMUX_BIN", "/opt/homebrew/bin/tmux")
 GIT = os.environ.get("RC_GIT_BIN", "git")
+
+
 def _read_token() -> str:
     """Auth token, file-first (the 0600 file install.sh writes) with the env as fallback.
     The service files stopped carrying the secret, so `launchctl print` / `systemctl show`
@@ -133,14 +136,25 @@ _git_cache: dict[str, tuple[float, dict | None]] = {}
 _git_lock = threading.Lock()
 
 
+def _git(path: str, *args: str, text: bool = True, **kw) -> subprocess.CompletedProcess:
+    """A git call against path's work tree, output captured — the git counterpart of
+    _tmux(). `-C` rather than cwd= so the argv carries its own root, and no OSError
+    guard: each caller decides what a missing/failing git means (_git_state drops the
+    badge, snapshot declines to checkpoint). text=False for callers that only read the
+    return code: decoding is strict, and an undecodable byte in git's stderr would
+    otherwise raise out of an unguarded launch()."""
+    return subprocess.run([GIT, "-C", path, *args],
+                          capture_output=True, text=text, **kw)
+
+
 def _git_state(proj: str) -> dict | None:
     """{'b': branch, 'd': dirty} for proj's working tree, or None when it isn't a git repo.
     One `git status --porcelain=v2 --branch` yields both: the '# branch.head' header names the
     branch; any non-'#' line (a tracked change or an untracked file) means the tree is dirty."""
     path = os.path.join(PARENT, proj)
     try:
-        out = subprocess.run([GIT, "-C", path, "status", "--porcelain=v2", "--branch"],
-                             capture_output=True, text=True, timeout=GIT_STATUS_TIMEOUT)
+        out = _git(path, "status", "--porcelain=v2", "--branch",
+                   timeout=GIT_STATUS_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired):
         # git missing under the minimal launchd PATH, or a hung/slow repo (index.lock, slow
         # disk): drop the badge rather than block a page() worker forever. TimeoutExpired is
@@ -148,13 +162,10 @@ def _git_state(proj: str) -> dict | None:
         return None
     if out.returncode:  # not a work tree (or a git error) — treat as "no git info"
         return None
-    branch, dirty = "", False
-    for ln in out.stdout.splitlines():
-        if ln.startswith("# branch.head "):
-            branch = ln.removeprefix("# branch.head ")
-        elif ln and not ln.startswith("#"):
-            dirty = True
-    return {"b": branch, "d": dirty}
+    lines = out.stdout.splitlines()
+    branch = next((ln.removeprefix("# branch.head ") for ln in lines
+                   if ln.startswith("# branch.head ")), "")
+    return {"b": branch, "d": any(ln and not ln.startswith("#") for ln in lines)}
 
 
 def _git_state_cached(proj: str) -> dict | None:
@@ -235,16 +246,13 @@ def snapshot(proj: str) -> str | None:
     if not os.environ.get("RC_SNAPSHOT"):
         return None
     path = os.path.join(PARENT, proj)
-    if subprocess.run([GIT, "-C", path, "rev-parse", "--is-inside-work-tree"],
-                      capture_output=True).returncode != 0:
+    if _git(path, "rev-parse", "--is-inside-work-tree", text=False).returncode != 0:
         return None
-    sha = subprocess.run([GIT, "-C", path, "stash", "create"],
-                         capture_output=True, text=True).stdout.strip()
+    sha = _git(path, "stash", "create").stdout.strip()
     if not sha:
         return None
     ref = f"refs/rc-snapshots/{proj}/{int(time.time())}"
-    subprocess.run([GIT, "-C", path, "update-ref", "-m", f"rc-snapshot {proj}", ref, sha],
-                   capture_output=True)
+    _git(path, "update-ref", "-m", f"rc-snapshot {proj}", ref, sha, text=False)
     return ref
 
 
@@ -417,9 +425,9 @@ def launch_cmd(proj: str) -> tuple[list[str], bool]:
 # Interactive-prompt policy: pane sentinel -> (keys to answer with, audit-log note).
 # This is PRODUCT policy (the owner's standing "never compact, always full resume"
 # choice), kept as data so the next claude prompt is a table row, not a _spawn rewrite.
-_PROMPT_ANSWERS = {
-    "Resume from summary": (["Down", "Enter"], "auto-confirmed FULL resume"),
-}
+_PROMPT_ANSWERS = MappingProxyType({
+    "Resume from summary": (("Down", "Enter"), "auto-confirmed FULL resume"),
+})
 
 
 def _settle_prompt(sess: str, proj: str) -> str:
@@ -677,16 +685,14 @@ def sweep_rcparts() -> int:
     Keyed on mtime, so an in-progress or actively-resuming upload — which keeps writing —
     is never swept. Returns how many were removed."""
     cutoff = time.time() - RCPART_TTL
+    parts = (os.path.join(root, name) for root, _, files in os.walk(SHARE)
+             for name in files if name.endswith(".rcpart"))
     n = 0
-    for root, _, files in os.walk(SHARE):
-        for name in files:
-            if not name.endswith(".rcpart"):
-                continue
-            p = os.path.join(root, name)
-            with contextlib.suppress(OSError):
-                if os.path.getmtime(p) < cutoff:
-                    os.unlink(p)
-                    n += 1
+    for p in parts:
+        with contextlib.suppress(OSError):
+            if os.path.getmtime(p) < cutoff:
+                os.unlink(p)
+                n += 1
     return n
 
 
@@ -695,6 +701,12 @@ def sweep_loop() -> None:
         if swept := sweep_rcparts():
             log_event("sweep", "rcparts", str(swept))
         time.sleep(1800)
+
+
+def _is_files(path: str) -> bool:
+    """The /files subtree, matched the same way by every verb — '/files' itself or
+    anything under it, never a '/filesomething' sibling."""
+    return path == "/files" or path.startswith("/files/")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -734,6 +746,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _json(self, payload: dict):
         self._send(200, json.dumps(payload).encode(), "application/json")
+
+    def _json_error(self, code: int, msg: str, close: bool = False, **extra):
+        """A refusal the app can parse. Compact separators keep the wire bytes identical
+        to the hand-written literals these eight sites used to carry."""
+        body = json.dumps({"error": msg} | extra, separators=(",", ":")).encode()
+        self._send(code, body, "application/json", close=close)
 
     def _authed(self, q: dict) -> bool:
         """Token via ?token= (first contact / bookmark) or the rc_token cookie set
@@ -806,23 +824,22 @@ class Handler(BaseHTTPRequestHandler):
         X-Rc-Total it's atomically renamed to the final name. Confined like every path."""
         target, tmp = self._part(path, self.headers.get("X-Rc-Id", ""))
         if target is None:
-            return self._send(403, b'{"error":"bad target"}', "application/json", close=True)
+            return self._json_error(403, "bad target", close=True)
         if not within_share(folder := os.path.dirname(target)) or not os.path.isdir(folder):
-            return self._send(404, b'{"error":"no such folder"}', "application/json", close=True)
+            return self._json_error(404, "no such folder", close=True)
         length = self.headers.get("Content-Length")
         if length is None or not length.isdigit():
-            return self._send(411, b'{"error":"length required"}', "application/json", close=True)
+            return self._json_error(411, "length required", close=True)
         length = int(length)
         offset = self._uint(self.headers.get("X-Rc-Offset"), 0)
         if offset is None:
-            return self._send(400, b'{"error":"bad offset"}', "application/json", close=True)
+            return self._json_error(400, "bad offset", close=True)
         total = self._uint(self.headers.get("X-Rc-Total"), offset + length)
         if total is None or total <= 0 or total < offset:
-            return self._send(400, b'{"error":"bad total"}', "application/json", close=True)
+            return self._json_error(400, "bad total", close=True)
         have = self._have(tmp)
         if offset > have:  # gap: client is ahead of us — tell it what we actually have
-            return self._send(409, f'{{"error":"gap","have":{have}}}'.encode(),
-                              "application/json", close=True)
+            return self._json_error(409, "gap", close=True, have=have)
         # Single-writer assumption: the sequential (await-per-file) browser/app clients never
         # run two PUTs to the same target+id concurrently, so the .rcpart needs no lock. An
         # overlap would corrupt only the partial (reclaimed by the sweep) — os.replace keeps the
@@ -854,7 +871,7 @@ class Handler(BaseHTTPRequestHandler):
         files (never the root, never a directory)."""
         target = share_target(path.removeprefix("/files"))
         if target is None or target == SHARE or not os.path.isfile(target):
-            return self._send(403, b'{"error":"bad target"}', "application/json")
+            return self._json_error(403, "bad target")
         os.unlink(target)
         log_event("delete", os.path.relpath(target, SHARE), "ok")
         self._json({"ok": True})
@@ -871,50 +888,52 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         if not self._authed(q):
             return self._send(403, b"forbidden")
-        if u.path == "/":
-            return self._send(200, page(), set_cookie=True)
-        if u.path == "/files" or u.path.startswith("/files/"):
-            return self._files(u.path)
-        if u.path == "/status":
-            return self._json({"running": sorted(running()), "login": login_status(),
-                               "states": session_states(), "desk": desk_projects()})
-        if u.path == "/create":
-            proj = q.get("proj", [""])[0]
-            status, reason = create(proj)
-            log_event("create", proj, status)
-            payload = {"status": status, "proj": proj}
-            if reason:
-                payload["reason"] = reason
-            if status == "created":
-                lstatus, lreason = launch(proj)
-                log_event("launch", proj, lstatus)
-                payload["launch"] = lstatus
-                if lreason:
-                    payload["launch_reason"] = lreason
-            return self._json(payload)
-        if u.path in ("/launch", "/stop"):
-            proj = q.get("proj", [""])[0]
-            if proj not in projects():
-                return self._send(404, b'{"error":"unknown project"}',
-                                  "application/json")
-            if u.path == "/stop" and q.get("desk", [""])[0] == "1":
-                status, reason = desk_stop(proj)  # the ✕ on a desk-badged row
-            else:
-                status, reason = launch(proj) if u.path == "/launch" else stop(proj)
-            log_event(u.path[1:], proj, status)
-            if q.get("json", [""])[0] == "1":
+        match u.path:
+            case "/":
+                return self._send(200, page(), set_cookie=True)
+            case "/status":
+                return self._json({
+                    "running": sorted(running()), "login": login_status(),
+                    "states": session_states(), "desk": desk_projects()})
+            case "/create":
+                proj = q.get("proj", [""])[0]
+                status, reason = create(proj)
+                log_event("create", proj, status)
                 payload = {"status": status, "proj": proj}
                 if reason:
                     payload["reason"] = reason
+                if status == "created":
+                    lstatus, lreason = launch(proj)
+                    log_event("launch", proj, lstatus)
+                    payload["launch"] = lstatus
+                    if lreason:
+                        payload["launch_reason"] = lreason
                 return self._json(payload)
-            return self._send(200, page())
-        self._send(404, b"not found")
+            case "/launch" | "/stop":
+                proj = q.get("proj", [""])[0]
+                if proj not in projects():
+                    return self._json_error(404, "unknown project")
+                if u.path == "/stop" and q.get("desk", [""])[0] == "1":
+                    status, reason = desk_stop(proj)  # the ✕ on a desk-badged row
+                else:
+                    status, reason = launch(proj) if u.path == "/launch" else stop(proj)
+                log_event(u.path[1:], proj, status)
+                if q.get("json", [""])[0] == "1":
+                    payload = {"status": status, "proj": proj}
+                    if reason:
+                        payload["reason"] = reason
+                    return self._json(payload)
+                return self._send(200, page())
+            case path if _is_files(path):
+                return self._files(path)
+            case _:
+                self._send(404, b"not found")
 
     def do_PUT(self):
         u = urlparse(self.path)
         if not self._authed(parse_qs(u.query)):  # PUT carries a body we won't read -> close
             return self._send(403, b"forbidden", close=True)
-        if u.path == "/files" or u.path.startswith("/files/"):
+        if _is_files(u.path):
             return self._upload(u.path)
         self._send(404, b"not found", close=True)
 
@@ -923,7 +942,7 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if not self._authed(parse_qs(u.query)):
             return self._send(403, b"forbidden")
-        if u.path == "/files" or u.path.startswith("/files/"):
+        if _is_files(u.path):
             return self._delete(u.path)
         self._send(404, b"not found")
 
@@ -935,7 +954,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authed(parse_qs(u.query)):
             return self._send(403, b"forbidden")
         have = 0
-        if u.path == "/files" or u.path.startswith("/files/"):
+        if _is_files(u.path):
             _, tmp = self._part(u.path, self.headers.get("X-Rc-Id", ""))
             if tmp:
                 have = self._have(tmp)
@@ -945,7 +964,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, *_):
         pass
 
 

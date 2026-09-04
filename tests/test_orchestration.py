@@ -10,7 +10,7 @@ from pathlib import Path
 
 import rc_launcher
 
-from tests._harness import proc, restore_globals
+from tests._harness import desk, env, proc, respond, restore_globals, spawn_ok
 
 
 class OrchestrationTest(unittest.TestCase):
@@ -25,6 +25,7 @@ class OrchestrationTest(unittest.TestCase):
         rc_launcher.log_event = lambda *a: None
         self.calls: list = []
         self.responses: dict = {}   # command-substring -> proc(...)
+        self.desk: dict = {}        # pid -> desk(cwd, ...) for the pgrep/ps/lsof probes
         self.killed: list = []      # (pid, sig) seen by os.kill
         self.alive: set = set()     # pids that os.kill(pid, 0) should treat as alive
         rc_launcher.subprocess.run = self._run
@@ -39,11 +40,7 @@ class OrchestrationTest(unittest.TestCase):
 
     def _run(self, cmd, **kw):
         self.calls.append(cmd)
-        key = " ".join(map(str, cmd))
-        for pat, resp in self.responses.items():
-            if pat in key:
-                return resp() if callable(resp) else resp
-        return proc()
+        return respond(cmd, self.desk, self.responses)
 
     def _kill(self, pid, sig):
         self.killed.append((pid, sig))
@@ -109,41 +106,25 @@ class OrchestrationTest(unittest.TestCase):
 
     def test_desktop_sessions_scopes_by_cwd(self):
         root = os.path.join(rc_launcher.PARENT, "proj")
-
-        def run(cmd, **kw):
-            self.calls.append(cmd)
-            key = " ".join(map(str, cmd))
-            if "pgrep" in key:
-                return proc(stdout="111 222 333 444 555\n")
-            if "comm=" in key:  # 333 isn't a claude process; 555 is a lookalike binary —
-                # loosening the equality check to a substring match would include it
-                return proc(stdout="grep\n" if "333" in key
-                            else "claude-helper\n" if "555" in key else "claude\n")
-            if "command=" in key:  # 222 is an RC server, not a desktop client
-                return proc(stdout="claude remote-control\n" if "222" in key else "claude\n")
-            if "-Fn" in key:  # 444 lives in the SIBLING-PREFIX dir projx: real ~/projects has
-                # such pairs (alpha/alpha-sub), and a bare startswith(root) mutant
-                # would cross-kill it — the == root / root+os.sep boundary is load-bearing
-                return proc(stdout=f"n{root}x\n" if "444" in key else f"n{root}/sub\n")
-            return proc()
-        rc_launcher.subprocess.run = run
+        self.desk = {
+            "111": desk(f"{root}/sub"),
+            # 222 is an RC server, not a desktop client
+            "222": desk(f"{root}/sub", command="claude remote-control"),
+            # 333 isn't a claude process; 555 is a lookalike binary — loosening the
+            # equality check to a substring match would include it
+            "333": desk(f"{root}/sub", comm="grep"),
+            # 444 lives in the SIBLING-PREFIX dir projx: real ~/projects has such pairs
+            # (alpha/alpha-sub), and a bare startswith(root) mutant would cross-kill
+            # it — the == root / root+os.sep boundary is load-bearing
+            "444": desk(f"{root}x"),
+            "555": desk(f"{root}/sub", comm="claude-helper"),
+        }
         self.assertEqual(rc_launcher.desktop_sessions("proj"), [111])
         # the pgrep match must be by full command line (-f), not a loose tool-name check
         self.assertTrue(any("-f" in c for c in self.calls if "pgrep" in " ".join(map(str, c))))
 
     def test_takeover_sigterms_and_returns_pids(self):
-        root = os.path.join(rc_launcher.PARENT, "proj")
-
-        def run(cmd, **kw):
-            key = " ".join(map(str, cmd))
-            if "pgrep" in key:
-                return proc(stdout="111\n")
-            if "comm=" in key:
-                return proc(stdout="claude\n")
-            if "-Fn" in key:
-                return proc(stdout=f"n{root}\n")
-            return proc()
-        rc_launcher.subprocess.run = run
+        self.desk = {"111": desk(os.path.join(rc_launcher.PARENT, "proj"))}
         self.alive = set()  # after SIGTERM the process is gone -> _alive False, no SIGKILL
         self.assertEqual(rc_launcher.takeover("proj"), [111])
         self.assertIn((111, rc_launcher.signal.SIGTERM), self.killed)
@@ -179,21 +160,7 @@ class OrchestrationTest(unittest.TestCase):
 
     def test_desk_stop_graceful_and_clears_cache(self):
         rc_launcher._desk_cache = (9e18, ["proj"])  # a warm cache the stop must invalidate
-        root = os.path.join(rc_launcher.PARENT, "proj")
-
-        def run(cmd, **kw):
-            self.calls.append(cmd)
-            key = " ".join(map(str, cmd))
-            if "pgrep" in key:
-                return proc(stdout="111\n")
-            if "comm=" in key:
-                return proc(stdout="claude\n")
-            if "command=" in key:
-                return proc(stdout="claude --continue\n")
-            if "-Fn" in key:
-                return proc(stdout=f"n{root}\n")
-            return proc()
-        rc_launcher.subprocess.run = run
+        self.desk = {"111": desk(os.path.join(rc_launcher.PARENT, "proj"))}
         self.alive = set()  # dies cleanly on SIGTERM -> no SIGKILL escalation
         self.assertEqual(rc_launcher.desk_stop("proj"), ("stopped", None))
         self.assertIn((111, rc_launcher.signal.SIGTERM), self.killed)   # graceful first
@@ -207,24 +174,11 @@ class OrchestrationTest(unittest.TestCase):
     def test_desk_projects_finds_plain_claude_by_cwd(self):
         rc_launcher._desk_cache = (0.0, [])  # reset the TTL cache; restored value irrelevant
         root = os.path.join(rc_launcher.PARENT, "proj")
-
-        def run(cmd, **kw):
-            self.calls.append(cmd)
-            key = " ".join(map(str, cmd))
-            if "pgrep" in key:
-                return proc(stdout="111\n222\n333\n")
-            if "comm=" in key:
-                return proc(stdout="claude\n")
-            if "command=" in key and "222" in key:
-                return proc(stdout="claude --remote-control proj\n")  # RC server -> filtered
-            if "command=" in key:
-                return proc(stdout="claude --continue\n")
-            if "-Fn" in key and "111" in key:
-                return proc(stdout=f"n{root}\n")          # desk session inside proj
-            if "-Fn" in key and "333" in key:
-                return proc(stdout="n/somewhere/else\n")  # outside PARENT -> filtered
-            return proc()
-        rc_launcher.subprocess.run = run
+        self.desk = {
+            "111": desk(root),                              # a desk session inside proj
+            "222": desk(root, command="claude --remote-control proj"),  # RC server: out
+            "333": desk("/somewhere/else"),                        # outside PARENT: out
+        }
         self.assertEqual(rc_launcher.desk_projects(), ["proj"])
         # second call inside the TTL is served from cache: no new pgrep forked
         pgreps = len([c for c in self.calls if "pgrep" in " ".join(map(str, c))])
@@ -240,7 +194,7 @@ class OrchestrationTest(unittest.TestCase):
 
     def test_launch_fresh_success(self):
         rc_launcher.RESUME, rc_launcher.SPAWN = "off", "same-dir"  # fresh path, no takeover
-        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        self.responses = spawn_ok()
         self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
         newsession = next(c for c in self.calls if "new-session" in " ".join(map(str, c)))
         self.assertEqual(newsession[-1],  # the exact claude command tmux is told to run —
@@ -260,7 +214,7 @@ class OrchestrationTest(unittest.TestCase):
         # must prepend it via a per-session -e (the plist form is non-deterministic:
         # tmux sessions inherit whichever env started the tmux SERVER first).
         rc_launcher.RESUME = "off"
-        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        self.responses = spawn_ok()
         self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
         newsession = next(c for c in self.calls if "new-session" in " ".join(map(str, c)))
         path_arg = next(a for a in newsession if str(a).startswith("PATH="))
@@ -277,10 +231,8 @@ class OrchestrationTest(unittest.TestCase):
         # session. The owner's standing choice is FULL resume (never compact): Down
         # moves off the highlighted summary option, Enter confirms.
         rc_launcher.RESUME, rc_launcher.SPAWN = "off", "same-dir"
-        self.responses = {
-            "has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n"),
-            "capture-pane": proc(stdout="Resume from summary (recommended)\nEnter to confirm\n"),
-        }
+        self.responses = spawn_ok() | {"capture-pane": proc(
+            stdout="Resume from summary (recommended)\nEnter to confirm\n")}
         self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
         answer = next(c for c in self.calls if "send-keys" in " ".join(map(str, c)))
         self.assertEqual(answer[-2:], ["Down", "Enter"])  # full resume, not the summary default
@@ -289,10 +241,8 @@ class OrchestrationTest(unittest.TestCase):
         # Any OTHER confirm-style prompt is a failed launch with the reason surfaced —
         # never a phantom "launched" whose session is invisible in the app.
         rc_launcher.RESUME, rc_launcher.SPAWN = "off", "same-dir"
-        self.responses = {
-            "has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n"),
-            "capture-pane": proc(stdout="Choose a login method\nEnter to confirm · Esc to cancel\n"),
-        }
+        self.responses = spawn_ok() | {"capture-pane": proc(
+            stdout="Choose a login method\nEnter to confirm · Esc to cancel\n")}
         status, reason = rc_launcher.launch("proj")
         self.assertEqual(status, "failed")
         self.assertIn("stuck at interactive prompt", reason)
@@ -337,7 +287,7 @@ class OrchestrationTest(unittest.TestCase):
         # must go STRAIGHT to the fresh flag form — one spawn, no doomed --continue attempt
         # (whose late death used to read as a phantom "launched" and evaporate).
         rc_launcher.RESUME, rc_launcher.SPAWN, rc_launcher.TAKEOVER = "continue", "same-dir", False
-        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        self.responses = spawn_ok()
         self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
         spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
         self.assertEqual(spawns, [f"{rc_launcher.CLAUDE} --remote-control proj"])
@@ -354,7 +304,7 @@ class OrchestrationTest(unittest.TestCase):
         # would C-c the SIBLING's session and launch() report "already" (verified
         # against a live tmux). Every -t target must be the exact-match `=name` form.
         rc_launcher.RESUME, rc_launcher.SPAWN, rc_launcher.TAKEOVER = "continue", "same-dir", False
-        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        self.responses = spawn_ok()
         rc_launcher.launch("proj")
         rc_launcher.stop("proj")
         targets = [c[i + 1] for c in self.calls for i, a in enumerate(c) if a == "-t"]
@@ -382,20 +332,14 @@ class OrchestrationTest(unittest.TestCase):
     # --- snapshot failure branches ---
 
     def test_snapshot_not_a_repo(self):
-        os.environ["RC_SNAPSHOT"] = "1"
+        env(self, RC_SNAPSHOT="1")
         self.responses = {"is-inside-work-tree": proc(returncode=1)}
-        try:
-            self.assertIsNone(rc_launcher.snapshot("proj"))
-        finally:
-            os.environ.pop("RC_SNAPSHOT", None)
+        self.assertIsNone(rc_launcher.snapshot("proj"))
 
     def test_snapshot_clean_tree_returns_none(self):
-        os.environ["RC_SNAPSHOT"] = "1"
+        env(self, RC_SNAPSHOT="1")
         self.responses = {"is-inside-work-tree": proc(returncode=0), "stash create": proc(stdout="\n")}
-        try:
-            self.assertIsNone(rc_launcher.snapshot("proj"))
-        finally:
-            os.environ.pop("RC_SNAPSHOT", None)
+        self.assertIsNone(rc_launcher.snapshot("proj"))
 
     # --- _pid_cwd via /proc, takeover SIGKILL, launch logging ---
 
@@ -409,18 +353,7 @@ class OrchestrationTest(unittest.TestCase):
             rc_launcher.os.path.islink, rc_launcher.os.readlink = real_islink, real_readlink
 
     def test_takeover_sigkills_straggler(self):
-        root = os.path.join(rc_launcher.PARENT, "proj")
-
-        def run(cmd, **kw):
-            key = " ".join(map(str, cmd))
-            if "pgrep" in key:
-                return proc(stdout="111\n")
-            if "comm=" in key:
-                return proc(stdout="claude\n")
-            if "-Fn" in key:
-                return proc(stdout=f"n{root}\n")
-            return proc()
-        rc_launcher.subprocess.run = run
+        self.desk = {"111": desk(os.path.join(rc_launcher.PARENT, "proj"))}
         self.alive = {111}  # survives SIGTERM -> forces the SIGKILL path
         ticks = iter([0.0, 1.0, 10.0])  # advance time past the 5s wait without real sleeping
         real_time = rc_launcher.time.time
@@ -431,40 +364,40 @@ class OrchestrationTest(unittest.TestCase):
             rc_launcher.time.time = real_time
         self.assertIn((111, rc_launcher.signal.SIGKILL), self.killed)
 
+    def test_snapshot_returncode_only_git_calls_stay_bytes(self):
+        # Gate lead: routing rev-parse/update-ref through _git() silently added text=True,
+        # so an undecodable byte in git's stderr would raise UnicodeDecodeError out of
+        # launch(); those two only read .returncode and must not decode. `stash create`
+        # reads stdout and legitimately decodes.
+        seen = []
+
+        def run(cmd, **kw):
+            seen.append((cmd, kw.get("text")))
+            return respond(cmd, self.desk, self.responses)
+        rc_launcher.subprocess.run = run
+        self.responses = {"stash create": proc(stdout="abc123\n")}
+        env(self, RC_SNAPSHOT="1")
+        rc_launcher.snapshot("proj")
+        modes = {c[3]: text for c, text in seen if c[0] == rc_launcher.GIT}
+        self.assertEqual(modes.get("rev-parse"), False)
+        self.assertEqual(modes.get("update-ref"), False)
+        self.assertEqual(modes.get("stash"), True)
+
     def test_launch_logs_snapshot_and_takeover(self):
         rc_launcher.RESUME, rc_launcher.SPAWN, rc_launcher.TAKEOVER = "continue", "same-dir", True
         self._seed_desk_thread("proj")  # takeover only guards a real resume; needs a cli thread
-        os.environ["RC_SNAPSHOT"] = "1"
-        os.environ["RC_STATE_DIR"] = "/tmp/st"
+        env(self, RC_SNAPSHOT="1", RC_STATE_DIR="/tmp/st")
         events = []
         rc_launcher.log_event = lambda *a: events.append(a)
-        root = os.path.join(rc_launcher.PARENT, "proj")
-
-        def run(cmd, **kw):
-            self.calls.append(cmd)
-            key = " ".join(map(str, cmd))
-            if "has-session" in key:
-                return proc(returncode=1)
-            if "is-inside-work-tree" in key:
-                return proc(returncode=0)
-            if "stash create" in key:
-                return proc(stdout="deadbeef\n")
-            if "pgrep" in key:
-                return proc(stdout="111\n")
-            if "comm=" in key:
-                return proc(stdout="claude\n")
-            if "-Fn" in key:
-                return proc(stdout=f"n{root}\n")
-            if "pane_dead" in key:
-                return proc(stdout="0\n")
-            return proc()
-        rc_launcher.subprocess.run = run
+        self.desk = {"111": desk(os.path.join(rc_launcher.PARENT, "proj"))}
+        self.responses = {
+            "has-session": proc(returncode=1),
+            "is-inside-work-tree": proc(returncode=0),
+            "stash create": proc(stdout="deadbeef\n"),
+            "pane_dead": proc(stdout="0\n"),
+        }
         self.alive = set()  # takeover target dies cleanly
-        try:
-            self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
-        finally:
-            os.environ.pop("RC_SNAPSHOT", None)
-            os.environ.pop("RC_STATE_DIR", None)
+        self.assertEqual(rc_launcher.launch("proj"), ("launched", None))
         kinds = [e[0] for e in events]
         self.assertIn("snap", kinds)
         self.assertIn("takeover", kinds)

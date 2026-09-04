@@ -14,10 +14,11 @@ import os
 import sys
 import time
 from pathlib import Path
+from types import MappingProxyType
 
 from rc_state import RANK, STATE_DIR, valid_states
 
-GLYPH = {"working": "● rc:working", "waiting": "○ rc:waiting"}
+GLYPH = MappingProxyType({"working": "● rc:working", "waiting": "○ rc:waiting"})
 
 
 def live() -> list[dict]:

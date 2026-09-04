@@ -4,6 +4,36 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-02
 
+- Surface polish on top of the readability pass (mechanical, no behavior change):
+  `Handler.log_message` drops its two unused params (`format` also shadowed the builtin) for
+  `*_`, so the silenced-access-log override no longer advertises a signature it ignores;
+  `_PROMPT_ANSWERS` and rc_status's `GLYPH` become `MappingProxyType` with tuple keystrokes,
+  matching `rc_state.RANK` — these are read-only tables and nothing should be able to write
+  them at runtime. rc_guard's two vocabulary frozensets, its `parents` set, the `rc_status`
+  subprocess call and the still-alive warning go back to the repo's hand-wrapped style from
+  the one-item-per-line form a formatter had left. 127 green, ruff clean.
+
+- Gate on the readability pass: the defect subagent found `_git()` had silently added
+  `text=True` to snapshot()'s two returncode-only git calls, so an undecodable byte in git's
+  stderr would raise `UnicodeDecodeError` out of an unguarded `launch()` — the one place
+  the refactor widened an exception surface; those calls take `text=False` now, pinned by
+  a kwargs-capturing test. The changed-line ratchet also flagged four pre-existing error
+  paths the refactor moved (411 without Content-Length, `launch_reason`, the failed
+  `/launch?json=1` reason, the HTML fallback); each got the test it asked for instead of a
+  lower number. Panel: 2 of 3 models (xAI returned 403, credits exhausted).
+- Readability pass (`/optimize`, quality-only, no behavior change): one `_json_error` for the
+  eight JSON refusals (compact separators keep the wire bytes identical to the literals),
+  one `_is_files` for the four `/files` predicates, `do_GET`'s six-branch ladder as a `match`,
+  and a `_git()` helper beside `_tmux()` for the four `git -C` calls — why: the launcher's HTTP
+  surface had eight near-identical error sends and four copies of a confinement predicate, each
+  a place the next edit could drift. `_git_state` reads branch/dirty with `next`/`any` instead of
+  a two-variable loop; `sweep_rcparts` walks one flattened generator. rc_guard's `live_sess` now
+  calls `session_alive` instead of re-inlining `tmux has-session` (two definitions of "is it
+  alive" could drift apart), stops shadowing its `parent` parameter, and prints the menu as one
+  block. rc_claude's `auth_status` narrows its `try` to the two calls that can fail. Tests: one
+  `respond()`/`desk()` in `_harness` replaces six inline pgrep/ps/lsof responders, plus
+  `share_dir`/`spawn_ok`/`env` for the setUp boilerplate (127 green before and after, -45 lines).
+
 - Whole-repo audit (`/audit`, four read-only finders + cross-family panel): net A- —
   architecture A-, code A, tests B+, process A-. Tests dropped from A- because 54 targeted
   mutants on shadow copies left 36 green, four of them on load-bearing launcher paths (the

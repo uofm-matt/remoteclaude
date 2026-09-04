@@ -16,18 +16,15 @@ from pathlib import Path
 
 import rc_launcher
 
-from tests._harness import proc, restore_globals, serve
+from tests._harness import (
+    desk, proc, respond, restore_globals, serve, share_dir, spawn_ok)
 
 TOKEN = "test-token-0123456789"
 
 
 class SweepTest(unittest.TestCase):
     def setUp(self):
-        self.share = os.path.realpath(tempfile.mkdtemp())
-        rc_launcher.SHARE = self.share
-
-    def tearDown(self):
-        shutil.rmtree(self.share, ignore_errors=True)
+        self.share = rc_launcher.SHARE = share_dir(self)
 
     def _aged(self, name: str) -> str:
         p = os.path.join(self.share, name)
@@ -53,9 +50,7 @@ class SweepTest(unittest.TestCase):
 class UploadServerTest(unittest.TestCase):
     def setUp(self):
         restore_globals(self)
-        self.share = os.path.realpath(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, self.share, True)
-        rc_launcher.SHARE = self.share
+        self.share = rc_launcher.SHARE = share_dir(self)
         rc_launcher.TOKEN = TOKEN
         rc_launcher.log_event = lambda *a: None  # don't append test traffic to the real log
         self.port = serve(self)
@@ -287,6 +282,21 @@ class UploadServerTest(unittest.TestCase):
         s.close()
         self.assertIn("connection: close", resp.lower())
 
+    def test_put_without_content_length_is_411_and_closes(self):
+        # no length, no chunked: the server cannot size the body, so it must refuse (411)
+        # and close rather than leave an unread body to desync the next request
+        s = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        s.sendall(f"PUT /files/nolen.bin HTTP/1.1\r\nHost: x\r\nCookie: rc_token={TOKEN}\r\n"
+                  f"X-Rc-Offset: 0\r\nX-Rc-Total: 10\r\n\r\n".encode())
+        chunks = []  # read to EOF: the server closes, and the body can trail the headers
+        while chunk := s.recv(65536):
+            chunks.append(chunk)
+        resp = b"".join(chunks).decode("latin1")
+        s.close()
+        self.assertIn(" 411 ", resp.splitlines()[0])
+        self.assertIn("connection: close", resp.lower())
+        self.assertIn('"length required"', resp)
+
     def test_dropped_connection_keeps_partial(self):
         # a real mid-body RST must hit the ConnectionError branch that KEEPS the .rcpart —
         # mutate that branch to os.unlink and this assertion fails (the headline resume feature).
@@ -309,11 +319,7 @@ class UploadServerTest(unittest.TestCase):
 class RowsHtmlTest(unittest.TestCase):
     def setUp(self):
         restore_globals(self)
-        self.share = os.path.realpath(tempfile.mkdtemp())
-        rc_launcher.SHARE = self.share
-
-    def tearDown(self):
-        shutil.rmtree(self.share, ignore_errors=True)
+        self.share = rc_launcher.SHARE = share_dir(self)
 
     def test_hides_rcpart_and_escaping_symlink(self):
         open(os.path.join(self.share, "real.txt"), "w").close()
@@ -345,11 +351,9 @@ class RouteTest(unittest.TestCase):
 
     def setUp(self):
         restore_globals(self)
-        self.share = os.path.realpath(tempfile.mkdtemp())
+        self.share = rc_launcher.SHARE = share_dir(self)
         self.aux = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.share, True)
         self.addCleanup(shutil.rmtree, self.aux, True)
-        rc_launcher.SHARE = self.share
         rc_launcher.TOKEN = TOKEN
         rc_launcher.PARENT = os.path.join(self.aux, "projects")
         os.makedirs(rc_launcher.PARENT)
@@ -358,6 +362,7 @@ class RouteTest(unittest.TestCase):
         Path(rc_launcher.CLAUDE_JSON).write_text("{}")
         rc_launcher.log_event = lambda *a: None
         self.responses: dict = {}
+        self.desk: dict = {}
         rc_launcher.subprocess.run = lambda cmd, **kw: self._resp(cmd)
         rc_launcher.os.kill = lambda *a: None
         rc_launcher.time.sleep = lambda *a: None
@@ -366,11 +371,7 @@ class RouteTest(unittest.TestCase):
         self.port = serve(self)
 
     def _resp(self, cmd):
-        key = " ".join(map(str, cmd))
-        for pat, r in self.responses.items():
-            if pat in key:
-                return r
-        return proc()
+        return respond(cmd, self.desk, self.responses)
 
     def get(self, path):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
@@ -397,7 +398,7 @@ class RouteTest(unittest.TestCase):
         self.assertNotIn(b"__LOGIN__", body)
 
     def test_create_route_makes_and_launches(self):
-        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        self.responses = spawn_ok()
         status, body = self.get("/create?proj=newp")
         d = json.loads(body)
         self.assertEqual(d["status"], "created")
@@ -415,7 +416,7 @@ class RouteTest(unittest.TestCase):
 
     def test_launch_and_stop_routes(self):
         os.makedirs(os.path.join(rc_launcher.PARENT, "realp"))
-        self.responses = {"has-session": proc(returncode=1), "pane_dead": proc(stdout="0\n")}
+        self.responses = spawn_ok()
         self.assertEqual(json.loads(self.get("/launch?proj=realp&json=1")[1])["status"], "launched")
         self.assertEqual(json.loads(self.get("/stop?proj=realp&json=1")[1])["status"], "stopped")
 
@@ -433,12 +434,7 @@ class RouteTest(unittest.TestCase):
                 raise ProcessLookupError  # SIGTERM worked; takeover needn't escalate
         rc_launcher.os.kill = kill
         rc_launcher.subprocess.run = lambda cmd, **kw: (calls.append(cmd), self._resp(cmd))[1]
-        self.responses = {
-            "pgrep": proc(stdout="321\n"),
-            "comm=": proc(stdout="claude\n"),
-            "command=": proc(stdout="claude --continue\n"),
-            "-Fn": proc(stdout=f"n{root}\n"),
-        }
+        self.desk = {"321": desk(root)}
         status, body = self.get("/stop?proj=deskp&desk=1&json=1")
         self.assertEqual(json.loads(body)["status"], "stopped")
         self.assertIn((321, rc_launcher.signal.SIGTERM), killed)   # graceful desk close
@@ -448,6 +444,37 @@ class RouteTest(unittest.TestCase):
 
     def test_unknown_route_404(self):
         self.assertEqual(self.get("/nonexistent")[0], 404)
+
+
+    def _dead_spawn(self):
+        # a fresh launch whose tmux pane dies inside the liveness window, with a
+        # recognisable death reason on its dead pane
+        return spawn_ok() | {"pane_dead": proc(stdout="1\n"),
+                             "capture-pane": proc(stdout="please trust this workspace\n")}
+
+    def test_launch_json_failure_carries_reason(self):
+        os.makedirs(os.path.join(rc_launcher.PARENT, "p"))
+        self.responses = self._dead_spawn()
+        status, body = self.get("/launch?proj=p&json=1")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"status": "failed", "proj": "p",
+                                            "reason": "untrusted dir"})
+
+    def test_create_then_failed_launch_carries_launch_reason(self):
+        self.responses = self._dead_spawn()
+        status, body = self.get("/create?proj=newproj")
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertEqual((payload["status"], payload["launch"]), ("created", "failed"))
+        self.assertEqual(payload["launch_reason"], "untrusted dir")
+
+    def test_launch_without_json_renders_the_page(self):
+        # the browser form (no json=1) gets the launcher page back, not JSON
+        os.makedirs(os.path.join(rc_launcher.PARENT, "p"))
+        self.responses = spawn_ok()
+        status, body = self.get("/launch?proj=p")
+        self.assertEqual(status, 200)
+        self.assertTrue(body.lstrip().lower().startswith(b"<!doctype html"), body[:40])
 
 
 if __name__ == "__main__":

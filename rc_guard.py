@@ -27,37 +27,13 @@ TAKEOVER_WAIT = 5.0  # seconds to let claude exit on SIGINT before kill-session
 
 PROCEED, ABORT, FRESH = 0, 1, 2
 # The caller already chose a session, or isn't starting one: never second-guess.
-CALLER_CONTROLS = frozenset(
-    {
-        "-c",
-        "--continue",
-        "-r",
-        "--resume",
-        "-p",
-        "--print",
-        "--new",
-        "-v",
-        "--version",
-        "-h",
-        "--help",
-    }
-)
+CALLER_CONTROLS = frozenset({"-c", "--continue", "-r", "--resume", "-p", "--print",
+                             "--new", "-v", "--version", "-h", "--help"})
 CALLER_CONTROL_PREFIXES = ("--resume=", "--session-id")
 # Subcommands that never open a conversation thread.
-NON_SESSION_SUBCOMMANDS = frozenset(
-    {
-        "mcp",
-        "update",
-        "doctor",
-        "auth",
-        "plugin",
-        "install",
-        "config",
-        "agents",
-        "setup-token",
-        "migrate-installer",
-    }
-)
+NON_SESSION_SUBCOMMANDS = frozenset({"mcp", "update", "doctor", "auth", "plugin",
+                                     "install", "config", "agents", "setup-token",
+                                     "migrate-installer"})
 
 
 def caller_controls(argv: list[str]) -> bool:
@@ -88,21 +64,17 @@ def live_sess(cwd: str, parent: str) -> str | None:
     candidates = [os.path.realpath(cwd)]
     if (pwd := os.environ.get("PWD")) and _same_dir(pwd, cwd):
         candidates.insert(0, os.path.normpath(pwd))
-    parents = {
-        os.path.join(p, "")
-        for p in (os.path.realpath(parent), os.path.normpath(parent))
-    }
+    parents = {os.path.join(p, "")
+               for p in (os.path.realpath(parent), os.path.normpath(parent))}
     hit = next(((c, p) for c in candidates for p in parents if c.startswith(p)), None)
     if hit is None:
         return None
-    inside, parent = hit
-    proj = inside[len(parent) :].split(os.sep, 1)[0]
+    inside, root = hit
+    proj = inside[len(root) :].split(os.sep, 1)[0]
     sess = f"rc-{proj}"
-    try:
-        r = subprocess.run([TMUX, "has-session", "-t", f"={sess}"], capture_output=True)
-    except FileNotFoundError:
-        return None
-    return sess if r.returncode == 0 else None
+    with contextlib.suppress(FileNotFoundError):
+        return sess if session_alive(sess) else None
+    return None
 
 
 def session_alive(sess: str) -> bool:
@@ -125,12 +97,8 @@ def state_tag() -> str:
     (or a hung state dir keeps it from saying anything within 2s)."""
     here = os.path.dirname(os.path.abspath(__file__))
     with contextlib.suppress(subprocess.TimeoutExpired):
-        r = subprocess.run(
-            [sys.executable, os.path.join(here, "rc_status.py")],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
+        r = subprocess.run([sys.executable, os.path.join(here, "rc_status.py")],
+                           capture_output=True, text=True, timeout=2)
         return r.stdout.strip()
     return ""
 
@@ -155,10 +123,8 @@ def takeover(sess: str) -> int:
     if session_alive(sess):
         subprocess.run([TMUX, "kill-session", "-t", f"={sess}"], capture_output=True)
     if session_alive(sess):
-        print(
-            f"{sess} is still alive after SIGINT and kill-session; not launching.",
-            file=sys.stderr,
-        )
+        print(f"{sess} is still alive after SIGINT and kill-session; not launching.",
+              file=sys.stderr)
         return ABORT
     return PROCEED
 
@@ -173,14 +139,13 @@ def main(argv: list[str]) -> int:
     err = sys.stderr
     print(
         f"A phone session is live for this project ({sess}{', ' + tag if tag else ''}).",
+        "  [a] attach to it here — one conversation, desk and phone",
+        "  [t] take over — close the remote session, resume the thread here",
+        "  [f] separate fresh session alongside it",
+        "  [q] quit (default)",
+        sep="\n",
         file=err,
     )
-    print("  [a] attach to it here — one conversation, desk and phone", file=err)
-    print(
-        "  [t] take over — close the remote session, resume the thread here", file=err
-    )
-    print("  [f] separate fresh session alongside it", file=err)
-    print("  [q] quit (default)", file=err)
     print("> ", end="", file=err, flush=True)
     ans = read_key()
     print(ans, file=err)

@@ -23,6 +23,6 @@ def auth_status(timeout: float = 15) -> tuple[str, str]:
         out = subprocess.run([CLAUDE, "auth", "status"],
                              capture_output=True, text=True, timeout=timeout).stdout
         d = json.loads(out)
-        return ("ok", d.get("email", "")) if d.get("loggedIn") else ("loggedout", "")
     except (json.JSONDecodeError, subprocess.SubprocessError, OSError) as err:
         return "unknown", str(err)
+    return ("ok", d.get("email", "")) if d.get("loggedIn") else ("loggedout", "")
