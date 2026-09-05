@@ -62,6 +62,15 @@ class OrchestrationTest(MockedToolsCase):
             "capture-pane": proc(stdout="Pane is dead\nboom other error\n")
         }
         self.assertEqual(rc_sessions.death_reason("s"), "boom other error")
+        # the marker TRAILING the real error is the case the filter exists for: with only
+        # the leading-marker fixture above, deleting the filter stayed green
+        self.responses = {
+            "capture-pane": proc(stdout="boom real error\nPane is dead\n")
+        }
+        self.assertEqual(rc_sessions.death_reason("s"), "boom real error")
+        # "credential" in the login-keyword list was unexercised
+        self.responses = {"capture-pane": proc(stdout="invalid credentials\n")}
+        self.assertIn("login expired", rc_sessions.death_reason("s"))
         self.responses = {"capture-pane": proc(stdout="")}
         self.assertEqual(rc_sessions.death_reason("s"), "exited immediately")
 

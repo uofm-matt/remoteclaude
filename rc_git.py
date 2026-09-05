@@ -35,7 +35,7 @@ def _git_state(proj: str) -> dict | None:
     """{'b': branch, 'd': dirty} for proj's working tree, or None when it isn't a git repo.
     One `git status --porcelain=v2 --branch` yields both: the '# branch.head' header names the
     branch; any non-'#' line (a tracked change or an untracked file) means the tree is dirty."""
-    path = os.path.join(cfg.PARENT, proj)
+    path = cfg.project_dir(proj)
     try:
         out = _git(
             path, "status", "--porcelain=v2", "--branch", timeout=cfg.GIT_STATUS_TIMEOUT
@@ -87,7 +87,7 @@ def snapshot(proj: str) -> str | None:
     """
     if not os.environ.get("RC_SNAPSHOT"):
         return None
-    path = os.path.join(cfg.PARENT, proj)
+    path = cfg.project_dir(proj)
     if _git(path, "rev-parse", "--is-inside-work-tree", text=False).returncode != 0:
         return None
     sha = _git(path, "stash", "create").stdout.strip()

@@ -182,10 +182,13 @@ class UploadActivity : Activity() {
         return out
     }
 
+    // pre-33 (Tiramisu) has no typed getParcelableExtra overload; the untyped one is the
+    // only option there, hence the suppressed deprecation on the else branch.
     private fun stream(i: Intent): Uri? =
         if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
         else @Suppress("DEPRECATION") i.getParcelableExtra(Intent.EXTRA_STREAM)
 
+    // same pre-33 reason as stream(): no typed getParcelableArrayListExtra before Tiramisu.
     private fun streams(i: Intent): List<Uri> =
         if (Build.VERSION.SDK_INT >= 33)
             i.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()

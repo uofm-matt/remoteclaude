@@ -59,6 +59,7 @@ _STDLIB = (
     (os, "kill"),
     (time, "sleep"),
     (time, "time"),
+    (time, "monotonic"),
     (os.path, "islink"),
     (os, "readlink"),
 )

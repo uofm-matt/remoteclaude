@@ -13,6 +13,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 _UPLOAD = (Path(__file__).parent / "rc_upload.js").read_text()
+_DOWNLOAD = (Path(__file__).parent / "rc_download.js").read_text()
 
 # shared by both pages (filled into __PTR__ below) — the pull-to-refresh overlay
 _PTR = """(function(){var y0=0,a=false,dy=0,T=64,se=document.scrollingElement||document.documentElement;
@@ -44,6 +45,7 @@ _CHUNKS = MappingProxyType(
         "__BASE__": _BASE,
         "__PTR__": _PTR,
         "__UPLOAD__": _UPLOAD,
+        "__DOWNLOAD__": _DOWNLOAD,
     }
 )
 

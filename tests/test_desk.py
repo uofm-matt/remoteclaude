@@ -68,7 +68,7 @@ class DeskTest(MockedToolsCase):
         self.alive = {111}  # survives SIGTERM -> forces the SIGKILL path
         # advance time past the 5s wait without real sleeping
         ticks = iter([0.0, 1.0, 10.0])
-        time.time = lambda: next(ticks, 100.0)  # restore_globals() puts it back
+        time.monotonic = lambda: next(ticks, 100.0)  # restore_globals() puts it back
         sleeps = []
         time.sleep = lambda s: sleeps.append(s)
         rc_desk.takeover("proj")

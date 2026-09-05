@@ -58,6 +58,8 @@ class MainActivity : Activity() {
         val bg = Color.parseColor(if (night) "#0b0f14" else "#eef1f5")
         window.statusBarColor = bg
         window.decorView.setBackgroundColor(bg)
+        // systemUiVisibility is deprecated (API 30) for WindowInsetsController, which needs
+        // androidx; this app stays dependency-free, so the old flag is the minSdk-29 path.
         @Suppress("DEPRECATION")
         if (!night) window.decorView.systemUiVisibility =
             window.decorView.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -80,6 +82,8 @@ class MainActivity : Activity() {
                     fileCallback = cb
                     skipNextReload = true  // the resume after the picker must not reload —
                     return try {           // that would cancel the upload the file starts
+                        // startActivityForResult is deprecated for the Activity Result API,
+                        // which needs ComponentActivity/AppCompat; this is a bare Activity.
                         @Suppress("DEPRECATION")
                         startActivityForResult(params.createIntent(), 42); true
                     } catch (e: ActivityNotFoundException) {

@@ -59,6 +59,7 @@ var IS_APP=/rc-launcher-app/.test(navigator.userAgent),BUSY=false;
 // (a PDF, an image, text, video) opens it as it always did; only files a browser would
 // save anyway take the fetch-and-confirm path. In the app every tap is a download.
 var VIEWABLE=/\\.(pdf|txt|md|log|csv|json|html?|png|jpe?g|gif|webp|svg|mp4|m4a|mp3|webm)$/i;
+__DOWNLOAD__
 function status(m){st.hidden=!m;st.textContent=m||'';}
 function statusLater(m){status(m);setTimeout(function(){status('');},4000);}
 window.rcDownloadDone=function(name,ok){statusLater(ok?'\\u2713 saved '+name+' to Downloads':'\\u2717 '+name+' failed');};
@@ -69,17 +70,16 @@ if(IS_APP)return;
 BUSY=true;
 try{var r=await fetch(url);if(!r.ok)throw new Error(r.status);
 var total=+r.headers.get('Content-Length')||0;
-if(total>256*1048576){await r.body.cancel();var n=document.createElement('a');n.href=url;n.download=name;document.body.appendChild(n);n.click();n.remove();
+if(downloadMode(total)==='native'){await r.body.cancel();var n=document.createElement('a');n.href=url;n.download=name;document.body.appendChild(n);n.click();n.remove();
 statusLater('\\u2b07 '+name+' ('+hum(total)+') handed to the browser');return;}  // too big to buffer
 var rd=r.body.getReader(),chunks=[],got=0;
 for(;;){var c=await rd.read();if(c.done)break;chunks.push(c.value);got+=c.value.length;
-status('\\u2b07 '+name+' '+(total?Math.floor(got*100/total)+'% ':'')+hum(got)+(total?'/'+hum(total):''));}
+status(progressText(name,got,total));}
 var b=new Blob(chunks),u=URL.createObjectURL(b),l=document.createElement('a');
 l.href=u;l.download=name;document.body.appendChild(l);l.click();l.remove();
 setTimeout(function(){URL.revokeObjectURL(u);},60000);
 statusLater('\\u2713 downloaded '+name+' ('+hum(b.size)+')');
 }catch(e){statusLater('\\u2717 '+name+' failed');}finally{BUSY=false;}}
-function hum(n){if(n<1024)return n+' B';var u=['KB','MB','GB','TB'],i=-1;do{n/=1024;i++;}while(n>=1024&&i<3);return n.toFixed(1)+' '+u[i];}
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 __UPLOAD__
 function putSlice(url,fl,off,end,total,rid){return new Promise(function(res){

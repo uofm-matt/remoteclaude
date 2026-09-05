@@ -44,6 +44,25 @@ class FunctionTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def test_ensure_trusted_keys_on_physical_path_under_symlinked_parent(self):
+        # PARENT is realpath'd at import; a symlinked RC_PROJECTS_PARENT must resolve to the
+        # physical dir so the trust key matches claude's own physical-getcwd key. Untested
+        # before (not live on this host).
+        real = os.path.join(self.tmp, "real")
+        os.makedirs(os.path.join(real, "proj"))
+        link = os.path.join(self.tmp, "link")
+        os.symlink(real, link)
+        rc_config.PARENT = os.path.realpath(
+            link
+        )  # what import does with a symlinked parent
+        Path(rc_config.CLAUDE_JSON).write_text("{}")
+        rc_sessions.ensure_trusted("proj")
+        projects = json.loads(Path(rc_config.CLAUDE_JSON).read_text())["projects"]
+        # the key is the physical dir (realpath'd PARENT), never the symlink path
+        self.assertIn(os.path.join(rc_config.PARENT, "proj"), projects)
+        self.assertNotIn(os.path.join(link, "proj"), projects)
+        self.assertNotEqual(rc_config.PARENT, link)  # the symlink really did resolve
+
     def _proj(self, name: str) -> str:
         p = os.path.join(rc_config.PARENT, name)
         os.makedirs(p, exist_ok=True)

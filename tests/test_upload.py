@@ -130,6 +130,18 @@ class UploadTest(ServerCase):
         self.assertEqual(status, 409)
         self.assertEqual(json.loads(body)["have"], 100)
 
+    def test_offset_beyond_total_is_bad_total_400(self):
+        # X-Rc-Total < X-Rc-Offset is incoherent; the guard rejects it. No test sent
+        # offset>total, so deleting `total < offset` survived.
+        status, _, body = self.req(
+            "PUT",
+            "/files/o.bin",
+            body=b"x" * 10,
+            headers={"X-Rc-Offset": "500", "X-Rc-Total": "100"},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(json.loads(body)["error"], "bad total")
+
     def test_malformed_headers_400_and_server_survives(self):
         for off in (
             "abc",

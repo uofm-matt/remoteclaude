@@ -76,7 +76,7 @@ def desktop_sessions(proj: str) -> list[int]:
     """PIDs of live desk claude sessions whose cwd is inside proj — the clients a
     resuming remote session would collide with. Scoped by cwd, so sessions for any
     other project are never touched."""
-    root = os.path.join(cfg.PARENT, proj)
+    root = cfg.project_dir(proj)
     return [
         pid
         for pid, cwd in _desk_claude_pids()
@@ -114,8 +114,10 @@ def takeover(proj: str) -> list[int]:
     for pid in pids:
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
-    deadline = time.time() + 5
-    while time.time() < deadline and any(_alive(p) for p in pids):
+    deadline = (
+        time.monotonic() + 5
+    )  # monotonic: an NTP/DST step must not shorten the grace
+    while time.monotonic() < deadline and any(_alive(p) for p in pids):
         time.sleep(0.15)
     for pid in pids:
         if _alive(pid):

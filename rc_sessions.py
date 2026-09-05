@@ -97,7 +97,7 @@ def ensure_trusted(proj: str) -> None:
     and we only write when the flag is missing, to avoid racing claude's own
     frequent writes to this file.
     """
-    key = os.path.join(cfg.PARENT, proj)
+    key = cfg.project_dir(proj)
     try:
         d = json.loads(Path(cfg.CLAUDE_JSON).read_text())
     except FileNotFoundError:
@@ -154,7 +154,7 @@ def has_desk_thread(proj: str) -> bool:
     Only the first 256 KiB of each transcript is read: the entrypoint field appears within
     the first records of every real transcript, and transcripts grow to hundreds of MB —
     slurping them whole made every launch tap pay for the largest project's history."""
-    slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.join(cfg.PARENT, proj))
+    slug = re.sub(r"[^A-Za-z0-9]", "-", cfg.project_dir(proj))
     for f in cfg.CLAUDE_PROJECTS.glob(f"{slug}/*.jsonl"):
         with contextlib.suppress(OSError), open(f, "rb") as fh:
             if re.search(rb'"entrypoint":"(cli|claude-vscode)"', fh.read(262144)):
@@ -228,7 +228,7 @@ def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
             sess,
             *env_opts,
             "-c",
-            os.path.join(cfg.PARENT, proj),
+            cfg.project_dir(proj),
             " ".join(cmd),
         ],
         check=False,
@@ -337,7 +337,7 @@ def create(proj: str) -> tuple[str, str | None]:
     """
     if not cfg.NAME_RE.match(proj):
         return "badname", "letters, digits, dash, underscore only"
-    path = os.path.join(cfg.PARENT, proj)
+    path = cfg.project_dir(proj)
     try:
         os.makedirs(path)
     except FileExistsError:  # an existing project, or a second tap racing the first

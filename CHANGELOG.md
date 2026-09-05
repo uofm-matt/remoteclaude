@@ -4,6 +4,16 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-05
 
+- Worked the 2026-09-05 audit backlog (the actionable items; launcher screenshot excepted).
+  Tests: browser download logic extracted to a testable `rc_download.js` (size-cap decision,
+  progress text, `hum`) with `node --test` pinning the 256 MB boundary the page never
+  asserted; `death_reason` gains a marker-TRAILING case and a `credential` case; `_upload`
+  rejects offset>total (400 "bad total"); a symlinked `RC_PROJECTS_PARENT` is pinned to key
+  on the physical path. Behavior: `rc_desk.takeover` times its SIGTERM grace with
+  `monotonic` (an NTP/DST step can no longer shorten it); `TTLCache.invalidate` prunes the
+  single-flight locks too. Cleanup: `cfg.project_dir(proj)` replaces `os.path.join(cfg.PARENT,
+  proj)` at 7 sites; the four Kotlin `@Suppress("DEPRECATION")` now say why (systemUiVisibility,
+  startActivityForResult, pre-33 getParcelableExtra).
 - Project names no longer allow a dot. A `.` in a name is a tmux target metacharacter:
   `=rc-<name>` parses as `session.pane`, so a dotted session (e.g. an accidentally-created
   `.claude`) is untargetable — `stop()` operates on a nonexistent pane, and `graceful_stop`

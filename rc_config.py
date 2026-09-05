@@ -86,15 +86,19 @@ def log_event(action: str, proj: str, result: str) -> None:
     )
 
 
+def project_dir(proj: str) -> str:
+    """A project's on-disk root under PARENT — read as cfg.project_dir() at call time,
+    so a test that redirects PARENT reaches every caller (rc_git/rc_desk/rc_sessions)."""
+    return os.path.join(PARENT, proj)
+
+
 def projects() -> list[str]:
     try:
         entries = os.listdir(PARENT)
     except FileNotFoundError:
         return []
     return sorted(
-        e
-        for e in entries
-        if NAME_RE.match(e) and os.path.isdir(os.path.join(PARENT, e))
+        e for e in entries if NAME_RE.match(e) and os.path.isdir(project_dir(e))
     )
 
 
@@ -132,6 +136,9 @@ class TTLCache[T]:
     def invalidate(self) -> None:
         with self._lock:
             self._cache.clear()
+            # drop the per-key single-flight locks too, so a keyed cache can't grow them
+            # without bound; a call mid-flight keeps its own lock reference and finishes
+            self._inflight.clear()
 
 
 def ttl_cached[T](
