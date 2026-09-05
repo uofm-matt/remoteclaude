@@ -132,9 +132,8 @@ class TTLCache[T]:
                 # pre-invalidate, so it must not overwrite a fresher one or reappear stale.
                 if gen == self._gen:
                     self._cache[args] = (time.monotonic() + self._ttl(), value)
-                self._inflight.pop(
-                    args, None
-                )  # prune this key's lock; no unbounded growth
+                # prune this key's lock so _inflight can't grow without bound
+                self._inflight.pop(args, None)
         return value
 
     def _fresh(self, args: tuple) -> T | None:
@@ -144,9 +143,8 @@ class TTLCache[T]:
     def invalidate(self) -> None:
         with self._lock:
             self._cache.clear()
-            self._gen += (
-                1  # any fill now in flight is pre-invalidate; its write is dropped
-            )
+            # any fill now in flight is pre-invalidate; its write will be dropped
+            self._gen += 1
 
 
 def ttl_cached[T](

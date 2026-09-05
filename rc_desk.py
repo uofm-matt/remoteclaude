@@ -114,9 +114,8 @@ def takeover(proj: str) -> list[int]:
     for pid in pids:
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
-    deadline = (
-        time.monotonic() + 5
-    )  # monotonic: an NTP/DST step must not shorten the grace
+    # monotonic: an NTP/DST step must not shorten the SIGKILL grace
+    deadline = time.monotonic() + 5
     while time.monotonic() < deadline and any(_alive(p) for p in pids):
         time.sleep(0.15)
     for pid in pids:
