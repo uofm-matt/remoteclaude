@@ -62,6 +62,10 @@ class FunctionTest(unittest.TestCase):
     def test_create_rejects_bad_name(self):
         self.assertEqual(rc_sessions.create("../evil")[0], "badname")
         self.assertEqual(rc_sessions.create("a b")[0], "badname")
+        # a dot is banned: rc-<name> is a tmux target and "rc-a.b" parses as session.pane,
+        # so the session would be untargetable and stop() would report a phantom success
+        self.assertEqual(rc_sessions.create("a.b")[0], "badname")
+        self.assertEqual(rc_sessions.create(".claude")[0], "badname")
 
     def test_create_refuses_existing(self):
         self._proj("dup")
@@ -73,6 +77,7 @@ class FunctionTest(unittest.TestCase):
         self._proj("beta_1")
         self._proj("alpha")
         self._proj("with space")  # NAME_RE rejects the space
+        self._proj(".hidden")  # a dot-dir (.claude, .ruff_cache) is not a project
         open(os.path.join(rc_config.PARENT, "afile"), "w").close()  # a file, not a dir
         self.assertEqual(rc_config.projects(), ["alpha", "beta_1"])
 

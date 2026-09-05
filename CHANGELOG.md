@@ -4,6 +4,13 @@ Human-facing chronological record; newest first. One entry per change — what a
 
 ## 2026-09-05
 
+- Project names no longer allow a dot. A `.` in a name is a tmux target metacharacter:
+  `=rc-<name>` parses as `session.pane`, so a dotted session (e.g. an accidentally-created
+  `.claude`) is untargetable — `stop()` operates on a nonexistent pane, and `graceful_stop`
+  reads "no such session" as gone and reports "stopped" while the session lives on. Dropping
+  `.` from `NAME_RE` (the one gate `projects()`, `create()` and `stop()` share) also stops
+  dot-directories like `.claude`/`.ruff_cache` being listed as projects. No existing project
+  dir had a dot.
 - Downloads confirm like uploads do: tapping a file on the files page shows "⬇ name…" in a
   new status line, then "✓ downloaded name (size)" or "✗ name failed". In a browser the page
   fetches the bytes itself (streamed, with a percentage while it runs) and hands them to a
