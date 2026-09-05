@@ -12,6 +12,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Now — audit 2026-09-05, target 2026-09-08
 
+> **DONE 2026-09-05** — logic extracted to `rc_download.js` (size-cap decision, progress text, hum) with `node --test` pinning the 256 MB boundary (deleting it now goes red); the files page calls `downloadMode()`/`progressText()`. Panel then hardened it: unknown Content-Length -> native (no unbounded buffer).
+
 - [ ] **Browser `download()` has no behavioral test — the one medium gap, and it is on
   code shipped this session.** `rc_files_page.py:65-83` — the fetch + progress + Blob +
   `>256 MB` hand-off + catch is covered only by `node --check` (parse validity) and
@@ -276,14 +278,20 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Later — unscheduled
 
+> **DONE 2026-09-05** — switched to `time.monotonic()` (deadline + loop); the test and `_harness._STDLIB` now patch/restore `time.monotonic`.
+
 - [ ] **`rc_desk.takeover()` times its SIGTERM grace with `time.time()`; `rc_tmux.graceful_stop()`
   uses `time.monotonic()`.** rc_desk.py — a wall-clock step (NTP, DST) can shorten or stretch
   the 5s before SIGKILL. Switching is a behavior change with two test hooks on `time.time`
   (`test_takeover_sigkills_straggler`, `_harness._STDLIB`), so it is not a quality-pass edit.
   Fix: `monotonic` + re-point the two hooks. (/optimize finding, 2026-09-04.)
+> **DONE 2026-09-05** — pruned per-key after each fill; and invalidate() now bumps a generation (a pre-invalidate in-flight fill is dropped) instead of clearing _inflight — the panel showed the wholesale clear caused last-writer-wins. Threaded test kills both mutants.
+
 - [ ] **`TTLCache._inflight` is never pruned** — one `Lock` per distinct argument tuple for the
   process lifetime. rc_config.py. Bounded by the project count in practice (keys are project
   names or `()`), so a note, not a leak; prune on `invalidate()` if a keyed cache ever grows.
+> **DONE 2026-09-05** — `test_parent_resolves_a_symlinked_projects_parent_to_physical` drives a fresh import under a symlinked parent and asserts PARENT resolved to the physical dir; goes red if the realpath at rc_config.py is dropped (the first version was a tautology, caught by the defect pass).
+
 - [ ] **`PARENT` is realpath'd since the cut; a symlinked `RC_PROJECTS_PARENT` is untested.**
   rc_config.py — `ensure_trusted`'s `~/.claude.json` key, `has_desk_thread`'s transcript slug
   and tmux `-c` all now use the physical path (claude keys by physical getcwd, so probably
@@ -292,6 +300,8 @@ before you schedule from a stale entry: check the claim still holds, then act.
 - [ ] **Refresh docs/launcher.png.** Predates the session icons and desk badges (2026-08-16);
   needs a phone screenshot of the current page dropped into `docs/`. Not doable from a
   session.
+> **DONE 2026-09-05** — test_orchestration gains a marker-TRAILING case and a `credential` case; both mutants (filter deletion, keyword) killed.
+
 - [ ] **`death_reason()`'s "Pane is dead" filter is unpinned.** `rc_sessions.py` `death_reason`,
   test_orchestration.py:104 — deleting `and not s.startswith("Pane is dead")` stays green
   because the only multi-line fixture puts the marker on the FIRST line, so reversal finds the
@@ -299,15 +309,21 @@ before you schedule from a stale entry: check the claim still holds, then act.
   untested; the mutant reports "Pane is dead" as the failure reason to the phone. Add a case
   with the marker as the last non-empty line. Cost: flat (a wrong diagnostic on a rare failed
   launch). (~3 lines, via /gate. Audit 2026-09-05.)
+> **DONE 2026-09-05** — `test_offset_beyond_total_is_bad_total_400` pins `_upload`'s total<offset (400 "bad total"); the `credential` keyword is pinned by the death_reason case above.
+
 - [ ] **Two defensive clauses unpinned.** `_upload`'s `total < offset` guard (`rc_launcher.py`
   — no test sends offset>total) and `death_reason`'s `"credential"` login-classification
   keyword (no test exercises it). Both harmless if unpinned; one assertion each freezes them.
   Cost: flat. (Audit 2026-09-05.)
+> **DONE 2026-09-05** — `cfg.project_dir(proj)` at all 7 sites (read at call time, so test PARENT-redirection still reaches every caller); defect pass confirmed no `from rc_config import`.
+
 - [ ] **`os.path.join(cfg.PARENT, proj)` recurs 7-8× across rc_git/rc_desk/rc_sessions/rc_config.**
   A `cfg.project_dir(proj)` one-liner (read at call time, not imported) names the concept once.
   /optimize's refactor pass declined this as taste on 2026-09-04 and it is genuinely low value
   (`PARENT` is one realpath'd constant, so drift risk is near zero) — carried as the operator's
   call, not a defect. (Audit 2026-09-05.)
+> **DONE 2026-09-05** — each now says why (systemUiVisibility needs androidx; startActivityForResult needs AppCompat; pre-33 has no typed getParcelableExtra). Android CI green.
+
 - [ ] **Four Kotlin `@Suppress("DEPRECATION")` lack a why-comment.** MainActivity.kt:61,83 and
   UploadActivity.kt:187,192 — each is the pre-Tiramisu `else` branch of an SDK-version check
   around the untyped `getParcelableExtra`; correct and narrowly scoped, just uncommented. One
