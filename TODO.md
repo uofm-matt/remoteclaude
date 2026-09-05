@@ -1,13 +1,26 @@
 # TODO
 
 Backlog for remoteclaude, ranked by leverage. Dates are targets, not deadlines.
-Grades 2026-09-02 (@3256853, audit): architecture A-, code A, tests B+, process A- (net A-).
+Grades 2026-09-05 (@414ee97, audit): architecture A, code A, tests A-, process A (net A-).
+Grades 2026-09-02 (@3256853, superseded): architecture A-, code A, tests B+, process A- (net A-).
 Grades 2026-08-17 evening (@87c58bf, superseded): architecture A-, code A-, tests A-, process A- (net A-).
 Grades 2026-08-17 morning (@55ab16a, superseded): arch B+, code A-, tests B+, process A- (net B+).
 
 When an item is done, **leave it unticked with a `DONE <date>:` note above it** rather than
 deleting it — the original wording records what was wrong, the note records the fix. Verify
 before you schedule from a stale entry: check the claim still holds, then act.
+
+## Now — audit 2026-09-05, target 2026-09-08
+
+- [ ] **Browser `download()` has no behavioral test — the one medium gap, and it is on
+  code shipped this session.** `rc_files_page.py:65-83` — the fetch + progress + Blob +
+  `>256 MB` hand-off + catch is covered only by `node --check` (parse validity) and
+  substring presence (`window.rcDownloadDone=function`, `URL.createObjectURL`). Deleting the
+  256 MB threshold leaves every test green — a performance guard with no test asserting what
+  it costs. Contrast `resumeUpload` (12 node tests) and `DownloadLogic.kt` (exact-string
+  tests). Extract the pure slice (offset/threshold/blob decision) the way `rc_upload.js` was
+  and give it `node --test` cases. **Cost of delay: GROWS** — new code on an active surface
+  that silently breaks while the parse/substring tests stay green. (~30 lines, via /gate.)
 
 ## Now — audit 2026-09-02, target 2026-09-05
 
@@ -279,6 +292,26 @@ before you schedule from a stale entry: check the claim still holds, then act.
 - [ ] **Refresh docs/launcher.png.** Predates the session icons and desk badges (2026-08-16);
   needs a phone screenshot of the current page dropped into `docs/`. Not doable from a
   session.
+- [ ] **`death_reason()`'s "Pane is dead" filter is unpinned.** `rc_sessions.py` `death_reason`,
+  test_orchestration.py:104 — deleting `and not s.startswith("Pane is dead")` stays green
+  because the only multi-line fixture puts the marker on the FIRST line, so reversal finds the
+  real error anyway. The filter's real job (skip the tmux marker when it TRAILS the error) is
+  untested; the mutant reports "Pane is dead" as the failure reason to the phone. Add a case
+  with the marker as the last non-empty line. Cost: flat (a wrong diagnostic on a rare failed
+  launch). (~3 lines, via /gate. Audit 2026-09-05.)
+- [ ] **Two defensive clauses unpinned.** `_upload`'s `total < offset` guard (`rc_launcher.py`
+  — no test sends offset>total) and `death_reason`'s `"credential"` login-classification
+  keyword (no test exercises it). Both harmless if unpinned; one assertion each freezes them.
+  Cost: flat. (Audit 2026-09-05.)
+- [ ] **`os.path.join(cfg.PARENT, proj)` recurs 7-8× across rc_git/rc_desk/rc_sessions/rc_config.**
+  A `cfg.project_dir(proj)` one-liner (read at call time, not imported) names the concept once.
+  /optimize's refactor pass declined this as taste on 2026-09-04 and it is genuinely low value
+  (`PARENT` is one realpath'd constant, so drift risk is near zero) — carried as the operator's
+  call, not a defect. (Audit 2026-09-05.)
+- [ ] **Four Kotlin `@Suppress("DEPRECATION")` lack a why-comment.** MainActivity.kt:61,83 and
+  UploadActivity.kt:187,192 — each is the pre-Tiramisu `else` branch of an SDK-version check
+  around the untyped `getParcelableExtra`; correct and narrowly scoped, just uncommented. One
+  line each. Cost: flat. (Audit 2026-09-05.)
 
 ## Later — audit 2026-08-17, unscheduled
 
