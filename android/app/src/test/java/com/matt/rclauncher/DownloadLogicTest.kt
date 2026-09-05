@@ -1,12 +1,12 @@
 package com.matt.rclauncher
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The completion call the app injects into the files page must be guarded (older pages
- *  lack the hook) and must survive hostile file names without breaking out of the string. */
+ *  lack the hook) and must survive hostile file names without breaking out of the string.
+ *  Exact strings, so an over- or under-escaping implementation cannot pass on fragments. */
 class DownloadLogicTest {
 
     @Test
@@ -20,18 +20,17 @@ class DownloadLogicTest {
 
     @Test
     fun hostileNameStaysInsideTheStringLiteral() {
-        val s = DownloadLogic.doneScript("a\"b\\c</script>\nd", true)
-        assertFalse(s.contains("<"))            // no raw angle brackets can close a script
-        assertFalse(s.contains("\n"))           // no raw newline can end the statement
-        assertTrue(s.contains("\\\""))          // the quote is escaped, not terminating
-        assertTrue(s.contains("\\\\"))          // the backslash is escaped
-        assertTrue(s.startsWith("window.rcDownloadDone&&rcDownloadDone(\""))
+        assertEquals(
+            "window.rcDownloadDone&&rcDownloadDone(\"a\\\"b\\\\c\\u003c/script\\u003e\\nd\",true)",
+            DownloadLogic.doneScript("a\"b\\c</script>\nd", true),
+        )
     }
 
     @Test
-    fun controlCharactersAreEscapedNotPassedThrough() {
-        // a NUL or a tab in a Content-Disposition name must not reach evaluateJavascript raw
-        val s = DownloadLogic.jsString("a\u0000b\tc\u007fd")
-        assertEquals("\"a\\u0000b\\u0009c\\u007fd\"", s)
+    fun lineTerminatorsAndControlsAreEscaped() {
+        // U+2028/2029 end a JS statement while being invisible in a file name; a NUL or a
+        // tab must not reach evaluateJavascript raw either
+        assertEquals("\"x\\u2028y\\u2029z\"", DownloadLogic.jsString("x\u2028y\u2029z"))
+        assertEquals("\"a\\u0000b\\u0009c\\u007fd\\r\"", DownloadLogic.jsString("a\u0000b\tc\u007fd\r"))
     }
 }

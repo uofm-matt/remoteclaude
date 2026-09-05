@@ -219,9 +219,10 @@ class MainActivity : Activity() {
             val id = i.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
             val name = pending[id] ?: return
             val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            val status = dm.query(DownloadManager.Query().setFilterById(id)).use { cur ->
+            // query() is null when the Download Manager system app is disabled; treat as gone
+            val status = dm.query(DownloadManager.Query().setFilterById(id))?.use { cur ->
                 if (cur.moveToFirst()) cur.getInt(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)) else -1
-            }
+            } ?: -1
             val ok = when (status) {
                 DownloadManager.STATUS_SUCCESSFUL -> true
                 DownloadManager.STATUS_FAILED, -1 -> false  // -1: the row is gone (cancelled)

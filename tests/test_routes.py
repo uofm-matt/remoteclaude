@@ -4,6 +4,7 @@ spawned; plus the share page those same handlers render."""
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -50,6 +51,14 @@ class RowsHtmlTest(unittest.TestCase):
         self.assertIn("rc-launcher-app", out)
         self.assertIn("window.rcDownloadDone=function", out)
         self.assertIn("URL.createObjectURL", out)
+        # and the script must parse: a bad \\u escape or an unbalanced brace in the new
+        # async function would leave the page dead while every substring above still matched
+        if not (node := shutil.which("node")):
+            self.skipTest("node not installed")
+        script = re.search(r"<script>(.*)</script>", out, re.S).group(1)
+        path = os.path.join(self.share, "page.js")
+        Path(path).write_text(script)
+        self.assertEqual(subprocess.run([node, "--check", path]).returncode, 0)
 
     def test_script_context_values_are_escaped(self):
         self.assertNotIn("<", rc_templates.js("</script>"))  # the escape at the source

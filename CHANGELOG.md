@@ -21,7 +21,14 @@ Human-facing chronological record; newest first. One entry per change — what a
   JS-literal escaper covers every C0 control (a NUL in a name); files over 256 MB skip the
   in-memory fetch and go to the browser's native download. Known limit: in a browser the
   programmatic click of the download link happens after the fetch, outside the tap's
-  activation window — Firefox/LibreWolf and Chrome honour it, Safari may not.
+  activation window — Firefox/LibreWolf and Chrome honour it, Safari may not. Defect pass:
+  the server serves files inline, so in a browser a tap on something it renders (PDF,
+  image, text, video) still opens it as before and modifier-clicks stay native — only
+  files a browser would save anyway (APK, archives, office docs) take the fetch path;
+  downloads run one at a time so the status line is never shared; a disabled Download
+  Manager (null `query()`) reads as gone instead of crashing the receiver; the escaper
+  tests assert exact strings incl. U+2028/2029; the route test runs `node --check` on
+  the page script (skips without node) instead of matching substrings only.
 
 ## 2026-09-04
 

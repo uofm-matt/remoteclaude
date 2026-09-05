@@ -54,7 +54,11 @@ var REL=__REL__,up=document.getElementById('up'),st=document.getElementById('st'
 // The Android wrapper tags its UA; there the WebView's DownloadManager saves the file and
 // the app calls rcDownloadDone() when it finishes. Elsewhere the page fetches the bytes
 // itself so it can show progress and confirm, then hands them to a download link.
-var IS_APP=/rc-launcher-app/.test(navigator.userAgent);
+var IS_APP=/rc-launcher-app/.test(navigator.userAgent),BUSY=false;
+// The server serves files inline, so in a browser a tap on something the browser renders
+// (a PDF, an image, text, video) opens it as it always did; only files a browser would
+// save anyway take the fetch-and-confirm path. In the app every tap is a download.
+var VIEWABLE=/\\.(pdf|txt|md|log|csv|json|html?|png|jpe?g|gif|webp|svg|mp4|m4a|mp3|webm)$/i;
 function status(m){st.hidden=!m;st.textContent=m||'';}
 function statusLater(m){status(m);setTimeout(function(){status('');},4000);}
 window.rcDownloadDone=function(name,ok){statusLater(ok?'\\u2713 saved '+name+' to Downloads':'\\u2717 '+name+' failed');};
@@ -62,6 +66,7 @@ async function download(a){
 var name=a.querySelector('.nm').textContent,url=a.getAttribute('href');
 status('\\u2b07 '+name+'\\u2026');
 if(IS_APP)return;
+BUSY=true;
 try{var r=await fetch(url);if(!r.ok)throw new Error(r.status);
 var total=+r.headers.get('Content-Length')||0;
 if(total>256*1048576){await r.body.cancel();var n=document.createElement('a');n.href=url;n.download=name;document.body.appendChild(n);n.click();n.remove();
@@ -73,7 +78,7 @@ var b=new Blob(chunks),u=URL.createObjectURL(b),l=document.createElement('a');
 l.href=u;l.download=name;document.body.appendChild(l);l.click();l.remove();
 setTimeout(function(){URL.revokeObjectURL(u);},60000);
 statusLater('\\u2713 downloaded '+name+' ('+hum(b.size)+')');
-}catch(e){statusLater('\\u2717 '+name+' failed');}}
+}catch(e){statusLater('\\u2717 '+name+' failed');}finally{BUSY=false;}}
 function hum(n){if(n<1024)return n+' B';var u=['KB','MB','GB','TB'],i=-1;do{n/=1024;i++;}while(n>=1024&&i<3);return n.toFixed(1)+' '+u[i];}
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 __UPLOAD__
@@ -112,7 +117,9 @@ a.addEventListener('touchend',cancel);a.addEventListener('touchmove',cancel);
 a.addEventListener('mousedown',start);a.addEventListener('mouseup',cancel);
 a.addEventListener('mouseleave',cancel);
 a.addEventListener('click',function(e){if(lp){e.preventDefault();lp=false;return;}
-if(!IS_APP)e.preventDefault();download(a);});});
+if(IS_APP){download(a);return;}
+if(e.metaKey||e.ctrlKey||e.shiftKey||VIEWABLE.test(a.getAttribute('href')))return;  // native
+e.preventDefault();if(!BUSY)download(a);});});
 async function del(a){
 if(!confirm('Delete '+a.querySelector('.nm').textContent+'?'))return;
 try{await fetch(a.getAttribute('href'),{method:'DELETE'});location.reload();}catch(e){}}
