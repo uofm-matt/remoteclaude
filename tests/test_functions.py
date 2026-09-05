@@ -16,6 +16,8 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
+import sys
+import subprocess
 import rc_config
 import rc_desk
 import rc_git
@@ -44,24 +46,25 @@ class FunctionTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_ensure_trusted_keys_on_physical_path_under_symlinked_parent(self):
-        # PARENT is realpath'd at import; a symlinked RC_PROJECTS_PARENT must resolve to the
-        # physical dir so the trust key matches claude's own physical-getcwd key. Untested
-        # before (not live on this host).
-        real = os.path.join(self.tmp, "real")
-        os.makedirs(os.path.join(real, "proj"))
+    def test_parent_resolves_a_symlinked_projects_parent_to_physical(self):
+        # PARENT is realpath'd at import so the trust key matches claude's own
+        # physical-getcwd key. Drive a FRESH import with a symlinked RC_PROJECTS_PARENT: a
+        # test that sets rc_config.PARENT itself can't see the realpath being dropped at
+        # rc_config.py:31. This goes red if that realpath is removed.
+        real = os.path.realpath(os.path.join(self.tmp, "real"))
+        os.makedirs(real)
         link = os.path.join(self.tmp, "link")
         os.symlink(real, link)
-        rc_config.PARENT = os.path.realpath(
-            link
-        )  # what import does with a symlinked parent
-        Path(rc_config.CLAUDE_JSON).write_text("{}")
-        rc_sessions.ensure_trusted("proj")
-        projects = json.loads(Path(rc_config.CLAUDE_JSON).read_text())["projects"]
-        # the key is the physical dir (realpath'd PARENT), never the symlink path
-        self.assertIn(os.path.join(rc_config.PARENT, "proj"), projects)
-        self.assertNotIn(os.path.join(link, "proj"), projects)
-        self.assertNotEqual(rc_config.PARENT, link)  # the symlink really did resolve
+        repo = os.path.dirname(os.path.abspath(rc_config.__file__))
+        out = subprocess.run(
+            [sys.executable, "-c", "import rc_config; print(rc_config.PARENT)"],
+            capture_output=True,
+            text=True,
+            cwd=repo,
+            env={**os.environ, "RC_PROJECTS_PARENT": link},
+        ).stdout.strip()
+        self.assertEqual(out, real)  # resolved to the physical dir
+        self.assertNotEqual(out, link)  # not the symlink path
 
     def _proj(self, name: str) -> str:
         p = os.path.join(rc_config.PARENT, name)
