@@ -38,17 +38,42 @@ li a:active{background:var(--row2)}
 li.dir .nm{color:var(--accent)}
 .meta{color:var(--mut);font-size:11px;white-space:nowrap;flex:0 0 auto}
 li.empty{background:none;color:var(--mut);text-align:center;padding:30px}
+.st{color:var(--mut);font-size:12px;margin:6px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style></head>
 <body>
 <header>
 <h1>rc-share &middot; __HOST__</h1>
 <div class=crumb>__CRUMB__</div>
 <label class=up id=up>+ upload<input id=f type=file multiple hidden></label>
+<div class=st id=st hidden></div>
 <div class=sortbar><span class=sortlbl>sort</span><button class=sortbtn data-k=n>name</button><button class=sortbtn data-k=s>size</button><button class=sortbtn data-k=t>date</button></div>
 </header>
 <ul>__ROWS__</ul>
 <script>
-var REL=__REL__,up=document.getElementById('up');
+var REL=__REL__,up=document.getElementById('up'),st=document.getElementById('st');
+// The Android wrapper tags its UA; there the WebView's DownloadManager saves the file and
+// the app calls rcDownloadDone() when it finishes. Elsewhere the page fetches the bytes
+// itself so it can show progress and confirm, then hands them to a download link.
+var IS_APP=/rc-launcher-app/.test(navigator.userAgent);
+function status(m){st.hidden=!m;st.textContent=m||'';}
+function statusLater(m){status(m);setTimeout(function(){status('');},4000);}
+window.rcDownloadDone=function(name,ok){statusLater(ok?'\\u2713 saved '+name+' to Downloads':'\\u2717 '+name+' failed');};
+async function download(a){
+var name=a.querySelector('.nm').textContent,url=a.getAttribute('href');
+status('\\u2b07 '+name+'\\u2026');
+if(IS_APP)return;
+try{var r=await fetch(url);if(!r.ok)throw new Error(r.status);
+var total=+r.headers.get('Content-Length')||0;
+if(total>256*1048576){await r.body.cancel();var n=document.createElement('a');n.href=url;n.download=name;document.body.appendChild(n);n.click();n.remove();
+statusLater('\\u2b07 '+name+' ('+hum(total)+') handed to the browser');return;}  // too big to buffer
+var rd=r.body.getReader(),chunks=[],got=0;
+for(;;){var c=await rd.read();if(c.done)break;chunks.push(c.value);got+=c.value.length;
+status('\\u2b07 '+name+' '+(total?Math.floor(got*100/total)+'% ':'')+hum(got)+(total?'/'+hum(total):''));}
+var b=new Blob(chunks),u=URL.createObjectURL(b),l=document.createElement('a');
+l.href=u;l.download=name;document.body.appendChild(l);l.click();l.remove();
+setTimeout(function(){URL.revokeObjectURL(u);},60000);
+statusLater('\\u2713 downloaded '+name+' ('+hum(b.size)+')');
+}catch(e){statusLater('\\u2717 '+name+' failed');}}
 function hum(n){if(n<1024)return n+' B';var u=['KB','MB','GB','TB'],i=-1;do{n/=1024;i++;}while(n>=1024&&i<3);return n.toFixed(1)+' '+u[i];}
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 __UPLOAD__
@@ -86,7 +111,8 @@ a.addEventListener('touchstart',start,{passive:true});
 a.addEventListener('touchend',cancel);a.addEventListener('touchmove',cancel);
 a.addEventListener('mousedown',start);a.addEventListener('mouseup',cancel);
 a.addEventListener('mouseleave',cancel);
-a.addEventListener('click',function(e){if(lp){e.preventDefault();lp=false;}});});
+a.addEventListener('click',function(e){if(lp){e.preventDefault();lp=false;return;}
+if(!IS_APP)e.preventDefault();download(a);});});
 async function del(a){
 if(!confirm('Delete '+a.querySelector('.nm').textContent+'?'))return;
 try{await fetch(a.getAttribute('href'),{method:'DELETE'});location.reload();}catch(e){}}

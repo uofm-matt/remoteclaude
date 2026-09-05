@@ -43,6 +43,14 @@ class RowsHtmlTest(unittest.TestCase):
         self.assertNotIn("partial", rows)  # .rcpart hidden
         self.assertNotIn("escape", rows)  # symlink out of SHARE not listed
 
+    def test_files_page_carries_the_download_confirmation_hooks(self):
+        # the app keys on the UA tag and calls rcDownloadDone(); a browser gets the
+        # fetch-with-progress path. Both live in the page, so both are pinned here.
+        out = rc_share.share_page(self.share, "").decode()
+        self.assertIn("rc-launcher-app", out)
+        self.assertIn("window.rcDownloadDone=function", out)
+        self.assertIn("URL.createObjectURL", out)
+
     def test_script_context_values_are_escaped(self):
         self.assertNotIn("<", rc_templates.js("</script>"))  # the escape at the source
         out = rc_share.share_page(self.share, "a</script>b")

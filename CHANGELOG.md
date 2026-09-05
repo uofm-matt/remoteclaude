@@ -2,6 +2,27 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+## 2026-09-05
+
+- Downloads confirm like uploads do: tapping a file on the files page shows "⬇ name…" in a
+  new status line, then "✓ downloaded name (size)" or "✗ name failed". In a browser the page
+  fetches the bytes itself (streamed, with a percentage while it runs) and hands them to a
+  download link — buffered in memory, so it suits the share's documents rather than
+  multi-GB files. In the Android app the native DownloadManager still saves the file (to
+  Downloads, with the system notification); the app now tags its UA (`rc-launcher-app/1`),
+  keeps the download id → name map, and on the completion broadcast runs
+  `rcDownloadDone(name, ok)` in the page — built by a pure `DownloadLogic.doneScript` that
+  escapes the name as a JS literal (JVM-tested, incl. a `"</script>` name). Older pages
+  without the hook are a no-op.
+  Gate (3-model panel + defect pass): `registerReceiver` is branched on API 33 (the flag form
+  is mandatory there and absent below); the receiver acts only on a terminal DownloadManager
+  status so a spoofed broadcast (it is exported by necessity) cannot mark a running download
+  failed; the id→name map is process-wide so an Activity recreation still resolves it; the
+  JS-literal escaper covers every C0 control (a NUL in a name); files over 256 MB skip the
+  in-memory fetch and go to the browser's native download. Known limit: in a browser the
+  programmatic click of the download link happens after the fetch, outside the tap's
+  activation window — Firefox/LibreWolf and Chrome honour it, Safari may not.
+
 ## 2026-09-04
 
 - rc_tmux's module docstring still said the launcher's `stop()` used "the older fire-and-forget

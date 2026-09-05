@@ -4,14 +4,17 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.text.InputType
@@ -64,6 +67,9 @@ class MainActivity : Activity() {
             setBackgroundColor(bg)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            // The files page keys on this tag: in the app the native DownloadManager saves
+            // a tapped file and we report completion back into the page (see onDownloadDone).
+            settings.userAgentString = settings.userAgentString + " rc-launcher-app/1"
             // Route the page's <input type=file> (the /files upload button) to a
             // system file picker; without this the input does nothing in a WebView.
             webChromeClient = object : WebChromeClient() {
@@ -102,9 +108,20 @@ class MainActivity : Activity() {
             setDownloadListener { url, _, disposition, mime, _ -> download(url, disposition, mime) }
         }
         setContentView(web)
+        // RECEIVER_EXPORTED because DownloadManager's broadcast comes from the downloads
+        // provider, not the system UID, and the docs say NOT_EXPORTED misses those. The flag
+        // form is mandatory from API 33 (targetSdk 34) and absent below it, so branch.
+        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(onDownloadDone, filter, Context.RECEIVER_EXPORTED)
+        else registerReceiver(onDownloadDone, filter)
 
         val url = prefs.getString("url", null)
         if (url.isNullOrBlank()) promptForToken() else web.loadUrl(url)
+    }
+
+    override fun onDestroy() {
+        unregisterReceiver(onDownloadDone)
+        super.onDestroy()
     }
 
     override fun onPause() {
@@ -187,8 +204,38 @@ class MainActivity : Activity() {
                 URLUtil.guessFileName(url, disposition, mime),
             )
         }
-        (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+        val name = URLUtil.guessFileName(url, disposition, mime)
+        val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        pending[dm.enqueue(req)] = name
         Toast.makeText(this, "Downloading…", Toast.LENGTH_SHORT).show()
+    }
+
+    // The receiver is exported, so any app could send this action with a guessed id: act
+    // only on a terminal status from DownloadManager's own query (which lists this app's
+    // downloads only), and leave the entry pending otherwise so the real completion still
+    // lands. Process death loses the map; the OS notification still confirms the file.
+    private val onDownloadDone = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            val id = i.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            val name = pending[id] ?: return
+            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val status = dm.query(DownloadManager.Query().setFilterById(id)).use { cur ->
+                if (cur.moveToFirst()) cur.getInt(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)) else -1
+            }
+            val ok = when (status) {
+                DownloadManager.STATUS_SUCCESSFUL -> true
+                DownloadManager.STATUS_FAILED, -1 -> false  // -1: the row is gone (cancelled)
+                else -> return  // still running: not ours to report yet
+            }
+            pending.remove(id)
+            web.evaluateJavascript(DownloadLogic.doneScript(name, ok), null)
+        }
+    }
+
+    private companion object {
+        // DownloadManager id -> file name, so the completion broadcast can name the file to
+        // the page. Process-wide, not per Activity, so a recreated Activity still resolves it.
+        val pending = mutableMapOf<Long, String>()
     }
 
     // Render our own connection-error page into the WebView instead of the stock net:: page.
