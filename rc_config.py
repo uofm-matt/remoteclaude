@@ -110,6 +110,7 @@ class TTLCache[T]:
         self._cache: dict[tuple, tuple[float, T]] = {}
         self._lock = threading.Lock()
         self._inflight: dict[tuple, threading.Lock] = {}  # single-flight per key
+        self._gen = 0  # bumped by invalidate(); a fill from an older gen must not land
         functools.update_wrapper(self, fn)
 
     def __call__(self, *args) -> T:
@@ -119,6 +120,7 @@ class TTLCache[T]:
         with self._lock:
             if (hit := self._fresh(args)) is not None:
                 return hit
+            gen = self._gen
             gate = self._inflight.setdefault(args, threading.Lock())
         with gate:
             with self._lock:
@@ -126,7 +128,13 @@ class TTLCache[T]:
                     return hit
             value = self._fn(*args)
             with self._lock:
-                self._cache[args] = (time.monotonic() + self._ttl(), value)
+                # an invalidate() while we computed bumped the generation: this result is
+                # pre-invalidate, so it must not overwrite a fresher one or reappear stale.
+                if gen == self._gen:
+                    self._cache[args] = (time.monotonic() + self._ttl(), value)
+                self._inflight.pop(
+                    args, None
+                )  # prune this key's lock; no unbounded growth
         return value
 
     def _fresh(self, args: tuple) -> T | None:
@@ -136,9 +144,9 @@ class TTLCache[T]:
     def invalidate(self) -> None:
         with self._lock:
             self._cache.clear()
-            # drop the per-key single-flight locks too, so a keyed cache can't grow them
-            # without bound; a call mid-flight keeps its own lock reference and finishes
-            self._inflight.clear()
+            self._gen += (
+                1  # any fill now in flight is pre-invalidate; its write is dropped
+            )
 
 
 def ttl_cached[T](

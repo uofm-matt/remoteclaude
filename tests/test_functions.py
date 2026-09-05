@@ -184,6 +184,38 @@ class FunctionTest(unittest.TestCase):
         slow("k")
         self.assertEqual(calls, ["k", "k"])
 
+    def test_invalidate_during_a_fill_drops_the_stale_result(self):
+        # A fill in flight when invalidate() fires is pre-invalidate: it must not land in
+        # the cache (last-writer-wins would otherwise re-seat the stale value a fresh caller
+        # just replaced). Also pins the per-key prune: _inflight must not retain the key.
+        import threading
+
+        started, release, returns = (
+            threading.Event(),
+            threading.Event(),
+            iter(["A", "B"]),
+        )
+
+        @rc_config.ttl_cached(lambda: 60.0)
+        def f():
+            v = next(returns)
+            if v == "A":
+                started.set()
+                release.wait(2)  # A blocks mid-flight until we have invalidated
+            return v
+
+        got = []
+        t1 = threading.Thread(target=lambda: got.append(f()))
+        t1.start()
+        started.wait(2)
+        f.invalidate()  # bump the generation while A is still computing
+        release.set()
+        t1.join(2)
+        self.assertEqual(got, ["A"])  # A's own caller still gets A
+        self.assertEqual(f(), "B")  # but the cache recomputes — A did not poison it
+        self.assertEqual(f(), "B")  # and B is now cached
+        self.assertEqual(len(f._inflight), 0)  # every key's lock pruned after its fill
+
     def test_git_ttl_default_is_thirty_seconds(self):
         # raised 15 -> 30 on 2026-09-04 when /status started driving it; pinned so a
         # silent revert (or a silent bump) shows up here

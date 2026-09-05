@@ -14,6 +14,14 @@ Human-facing chronological record; newest first. One entry per change — what a
   single-flight locks too. Cleanup: `cfg.project_dir(proj)` replaces `os.path.join(cfg.PARENT,
   proj)` at 7 sites; the four Kotlin `@Suppress("DEPRECATION")` now say why (systemUiVisibility,
   startActivityForResult, pre-33 getParcelableExtra).
+- Gate on that batch (3-model panel): `TTLCache.invalidate` now bumps a generation instead
+  of clearing `_inflight` wholesale — a fill in flight when invalidate fires is pre-invalidate
+  and its cache write is dropped (the clear had let a stale result overwrite a fresh one,
+  last-writer-wins), and each key's single-flight lock is pruned after its own fill; a
+  threaded test pins both. `rc_templates` reads the JS assets with `encoding="utf-8"` so a
+  C/POSIX-locale host can't crash at import on a non-ASCII byte (latent since rc_upload.js).
+  The files page treats an unknown Content-Length as native download (no buffering an
+  unbounded body).
 - Project names no longer allow a dot. A `.` in a name is a tmux target metacharacter:
   `=rc-<name>` parses as `session.pane`, so a dotted session (e.g. an accidentally-created
   `.claude`) is untargetable — `stop()` operates on a nonexistent pane, and `graceful_stop`

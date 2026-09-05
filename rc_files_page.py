@@ -70,7 +70,7 @@ if(IS_APP)return;
 BUSY=true;
 try{var r=await fetch(url);if(!r.ok)throw new Error(r.status);
 var total=+r.headers.get('Content-Length')||0;
-if(downloadMode(total)==='native'){await r.body.cancel();var n=document.createElement('a');n.href=url;n.download=name;document.body.appendChild(n);n.click();n.remove();
+if(!total||downloadMode(total)==='native'){await r.body.cancel();var n=document.createElement('a');n.href=url;n.download=name;document.body.appendChild(n);n.click();n.remove();
 statusLater('\\u2b07 '+name+' ('+hum(total)+') handed to the browser');return;}  // too big to buffer
 var rd=r.body.getReader(),chunks=[],got=0;
 for(;;){var c=await rd.read();if(c.done)break;chunks.push(c.value);got+=c.value.length;
