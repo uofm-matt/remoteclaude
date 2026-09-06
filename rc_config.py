@@ -52,7 +52,9 @@ def _read_token() -> str:
 
 
 TOKEN = _read_token()
-PORT = int(os.environ.get("RC_LAUNCHER_PORT", "8787"))
+PORT = int(
+    os.environ.get("RC_LAUNCHER_PORT") or "8787"
+)  # empty env must not ValueError
 BIND = os.environ.get("RC_LAUNCHER_BIND", "0.0.0.0")
 SPAWN = os.environ.get("RC_SPAWN", "same-dir")  # same-dir | worktree | session
 RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
@@ -64,10 +66,10 @@ CLAUDE_PROJECTS = Path(os.path.expanduser("~/.claude/projects"))
 
 
 def _build_stamp(root: Path = Path(__file__).parent) -> str:
-    """A 12-hex hash over every rc_*.py beside this file: it changes iff the launcher's own
-    source changes, needs no git and no build step, and is recomputed at import — so it
-    advances exactly when a reload re-execs the process. Blank when no source is readable,
-    so /version answers instead of crashing."""
+    """A 12-hex hash over the shipped rc_*.py bundle beside this file: it changes iff any
+    shipped source does (all rc_*.py, not only the launcher's import closure — a reload
+    re-execs everything), needs no git and no build step, recomputed at import. Blank when
+    no source is readable, so /version answers instead of crashing."""
     h = hashlib.sha256()
     try:
         sources = sorted(root.glob("rc_*.py"))

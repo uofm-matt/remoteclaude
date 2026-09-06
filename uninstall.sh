@@ -31,26 +31,7 @@ if [ -n "$TMUX_BIN" ] && [ -x "$TMUX_BIN" ]; then
 fi
 
 # remove the turn-state hook (leaves any other hooks, e.g. unrelated tools, intact)
-RC_HOOK_CMD="$(python3 "$REPO/rc_state_hook.py" --hook-command "$REPO" 2>/dev/null || true)"
-export RC_HOOK_CMD
-[ -n "$RC_HOOK_CMD" ] && python3 - <<'PY' 2>/dev/null || true
-import json, os, sys
-p = os.path.expanduser("~/.claude/settings.json")
-if not os.path.exists(p):
-    sys.exit(0)
-d = json.load(open(p))
-cmd = os.environ["RC_HOOK_CMD"]  # rc_state_hook.py is the one source of this string
-hooks = d.get("hooks", {})
-for ev in list(hooks):
-    hooks[ev] = [g for g in hooks[ev]
-                 if not any(h.get("command") == cmd for h in g.get("hooks", []))]
-    if not hooks[ev]:
-        del hooks[ev]
-with open(p, "w") as f:
-    json.dump(d, f, indent=2)
-    f.write("\n")
-print("   state hook removed from", p)
-PY
+python3 "$REPO/rc_state_hook.py" --remove-hook "$REPO" 2>/dev/null || true
 
 echo "rc-launcher unloaded; rc-* sessions stopped."
 echo "(token kept at ~/.config/rc-launcher/token; delete it to rotate)"

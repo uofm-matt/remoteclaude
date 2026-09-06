@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 from rc_state import EVENT_STATE as STATE, STATE_DIR
 
@@ -59,6 +60,75 @@ def main() -> None:
 HOOK_COMMAND = '[ -n "$RC_REMOTE" ] && python3 {repo}/rc_state_hook.py; true'
 
 
+SETTINGS = os.path.expanduser("~/.claude/settings.json")
+EVENTS = (
+    "UserPromptSubmit",
+    "Notification",
+    "Stop",
+    "SubagentStop",
+    "SessionStart",
+    "SessionEnd",
+)
+
+
+def install_hook(repo: str) -> str:
+    """Register the state hook on every RC event in settings.json, idempotently — the merge
+    install.sh used to embed, now here so uninstall's removal matches it by construction."""
+    cmd = hook_command(repo)
+    p = Path(SETTINGS)
+    text = p.read_text() if p.exists() else ""
+    d = (
+        json.loads(text) if text.strip() else {}
+    )  # 0-byte/whitespace is empty; bad JSON raises
+    hooks = d.setdefault("hooks", {})
+    added = False
+    for ev in EVENTS:
+        entries = hooks.setdefault(ev, [])
+        if not any(
+            h.get("command") == cmd for e in entries for h in e.get("hooks", [])
+        ):
+            entries.append({"hooks": [{"type": "command", "command": cmd}]})
+            added = True
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(d, indent=2) + "\n")
+    return f"state hook {'registered' if added else 'already present'} in {p}"
+
+
+def remove_hook(repo: str) -> str:
+    """Remove the state hook from settings.json, leaving any other hooks intact."""
+    cmd = hook_command(repo)
+    p = Path(SETTINGS)
+    if not p.exists():
+        return f"no {p}"
+    text = p.read_text()
+    if not text.strip():
+        return f"empty {p}; nothing to remove"
+    try:
+        d = json.loads(text)
+    except json.JSONDecodeError:
+        return f"could not parse {p}; left unchanged"
+    hooks = d.get("hooks", {})
+    for (
+        ev
+    ) in EVENTS:  # only the events install_hook touches — the exact inverse, and an
+        entries = hooks.get(
+            ev
+        )  # unrelated event with a non-list value can't abort the removal
+        if not isinstance(entries, list):
+            continue
+        kept = [
+            e
+            for e in entries
+            if not any(h.get("command") == cmd for h in e.get("hooks", []))
+        ]
+        if kept:
+            hooks[ev] = kept
+        else:
+            hooks.pop(ev, None)
+    p.write_text(json.dumps(d, indent=2) + "\n")
+    return f"state hook removed from {p}"
+
+
 def hook_command(repo: str) -> str:
     """The exact settings.json command install.sh registers and uninstall.sh removes —
     one source, so the two scripts can never disagree on what to match."""
@@ -66,11 +136,17 @@ def hook_command(repo: str) -> str:
 
 
 def cli(argv: list[str]) -> None:
-    """`--hook-command <repo>` prints the settings command; anything else is the hook."""
-    if argv[:1] == ["--hook-command"]:
-        print(hook_command(argv[1]))
-    else:
-        main()
+    """--hook-command/--install-hook/--remove-hook <repo> manage the settings.json hook (what
+    install.sh/uninstall.sh call); anything else runs the hook itself (the event handler)."""
+    match argv:
+        case ["--hook-command", repo]:
+            print(hook_command(repo))
+        case ["--install-hook", repo]:
+            print("  ", install_hook(repo))
+        case ["--remove-hook", repo]:
+            print("  ", remove_hook(repo))
+        case _:
+            main()
 
 
 if __name__ == "__main__":

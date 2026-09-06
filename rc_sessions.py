@@ -118,13 +118,12 @@ def ensure_trusted(proj: str) -> None:
     fd, tmp = tempfile.mkstemp(
         dir=os.path.dirname(cfg.CLAUDE_JSON), prefix=".claude.json.rc"
     )
+    # disk full / unwritable: log and continue, don't 500 the launch or orphan a temp
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(d, f, indent=2)
         os.replace(tmp, cfg.CLAUDE_JSON)
-    except (
-        OSError
-    ) as e:  # disk full / unwritable: log and continue, don't 500 or orphan a temp
+    except OSError as e:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
         cfg.log_event("trust", proj, f"skip write: {e}")

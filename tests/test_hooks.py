@@ -5,6 +5,7 @@ guard. STATE_DIR is redirected to a tmp dir and restored per test."""
 import http.client
 import io
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -99,26 +100,131 @@ class HookTest(unittest.TestCase):
         self._hook({"hook_event_name": "SessionEnd", "session_id": "s1"})
         self.assertFalse(f.exists())  # SessionEnd removes the file
 
-    def test_hook_command_is_the_single_source(self):
-        # install.sh and uninstall.sh used to each embed this string; if one drifted the
-        # uninstaller stopped matching. Both now ask rc_state_hook.py for it, and no
-        # copy may reappear in either script.
+    def test_hook_command_and_settings_merge_are_single_sourced(self):
+        # BOTH the command string and the settings.json merge/removal live once in
+        # rc_state_hook; the scripts only call its CLI, so uninstall can't drift from install
+        # and neither embeds the JSON merge Python any more.
         cmd = rc_state_hook.hook_command("/r")
         self.assertEqual(
             cmd, '[ -n "$RC_REMOTE" ] && python3 /r/rc_state_hook.py; true'
         )
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc_state_hook.cli(["--hook-command", "/r"])  # what install.sh actually runs
+            rc_state_hook.cli(["--hook-command", "/r"])
         self.assertEqual(buf.getvalue().strip(), cmd)
         root = Path(rc_state_hook.__file__).parent
-        for script in ("install.sh", "uninstall.sh"):
+        for script, flag in (
+            ("install.sh", "--install-hook"),
+            ("uninstall.sh", "--remove-hook"),
+        ):
             text = (root / script).read_text()
-            self.assertNotIn("rc_state_hook.py; true", text, script)
-            self.assertIn("--hook-command", text, script)
-        # a failing substitution in a prefix assignment escapes `set -e`; the guard is
-        # what keeps an empty command out of six hook entries
-        self.assertIn('[ -n "$RC_HOOK_CMD" ]', (root / "install.sh").read_text())
+            self.assertIn(flag, text, script)  # calls the CLI, doesn't embed the logic
+            self.assertNotIn(
+                "rc_state_hook.py; true", text, script
+            )  # no embedded command
+            self.assertNotIn('setdefault("hooks"', text, script)  # no embedded merge
+            self.assertNotIn(
+                "json.load", text, script
+            )  # no embedded settings.json parse
+
+    def test_install_and_remove_hook_roundtrip(self):
+        # the settings.json merge, now unit-testable (install.sh had zero coverage of it):
+        # registers on all six events idempotently, removes cleanly, preserves other hooks.
+        keep(self, (rc_state_hook, "SETTINGS"))
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        rc_state_hook.SETTINGS = os.path.join(d, "settings.json")
+        Path(rc_state_hook.SETTINGS).write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [{"hooks": [{"type": "command", "command": "other"}]}]
+                    }
+                }
+            )
+        )
+        cmd = rc_state_hook.hook_command("/r")
+        rc_state_hook.install_hook("/r")
+        s = json.loads(Path(rc_state_hook.SETTINGS).read_text())
+        six = {
+            "UserPromptSubmit",
+            "Notification",
+            "Stop",
+            "SubagentStop",
+            "SessionStart",
+            "SessionEnd",
+        }
+        self.assertEqual(
+            set(rc_state_hook.EVENTS), six
+        )  # the exact set, so a drop is caught
+        self.assertEqual(set(s["hooks"]), six)  # all six registered
+        mine = lambda st, ev: any(
+            h["command"] == cmd for e in st["hooks"].get(ev, []) for h in e["hooks"]
+        )
+        self.assertTrue(all(mine(s, ev) for ev in rc_state_hook.EVENTS))
+        total = sum(len(v) for v in s["hooks"].values())
+        rc_state_hook.install_hook("/r")  # idempotent — no growth
+        s2 = json.loads(Path(rc_state_hook.SETTINGS).read_text())
+        self.assertEqual(sum(len(v) for v in s2["hooks"].values()), total)
+        # drive it through the CLI too (what the scripts call), then via cli --remove-hook
+        with redirect_stdout(io.StringIO()):
+            rc_state_hook.cli(["--remove-hook", "/r"])
+        s3 = json.loads(Path(rc_state_hook.SETTINGS).read_text())
+        self.assertFalse(any(mine(s3, ev) for ev in rc_state_hook.EVENTS))  # ours gone
+        self.assertIn("other", json.dumps(s3))  # the unrelated hook preserved
+        with redirect_stdout(io.StringIO()):
+            rc_state_hook.cli(["--install-hook", "/r"])  # cli install path
+        self.assertTrue(
+            mine(json.loads(Path(rc_state_hook.SETTINGS).read_text()), "Stop")
+        )
+        os.remove(rc_state_hook.SETTINGS)
+        self.assertIn("no ", rc_state_hook.remove_hook("/r"))  # no-settings-file branch
+
+    def test_hook_merge_tolerates_bad_and_unrelated_settings(self):
+        # robustness the panel flagged: empty/malformed settings.json, and a non-list value
+        # on a real event or an unrelated one, must not crash install/uninstall or touch
+        # other hooks.
+        keep(self, (rc_state_hook, "SETTINGS"))
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        rc_state_hook.SETTINGS = os.path.join(d, "settings.json")
+        cmd = rc_state_hook.hook_command("/r")
+
+        def mine(st, ev):
+            return any(
+                h["command"] == cmd for e in st["hooks"].get(ev, []) for h in e["hooks"]
+            )
+
+        # a 0-byte file is "empty", not a crash
+        Path(rc_state_hook.SETTINGS).write_text("")
+        rc_state_hook.install_hook("/r")
+        s = json.loads(Path(rc_state_hook.SETTINGS).read_text())
+        self.assertEqual(set(s["hooks"]), set(rc_state_hook.EVENTS))
+        # corrupt one of the SIX events (non-list) and add a non-list unrelated event: remove
+        # must skip the corrupt real event (isinstance guard, else a TypeError aborts) and
+        # never visit the unrelated one (EVENTS-only iteration).
+        s["hooks"]["Stop"] = "not-a-list"
+        s["hooks"]["WeirdEvent"] = "not-a-list"
+        Path(rc_state_hook.SETTINGS).write_text(json.dumps(s))
+        rc_state_hook.remove_hook("/r")  # must not raise
+        s2 = json.loads(Path(rc_state_hook.SETTINGS).read_text())
+        self.assertFalse(
+            any(
+                mine(s2, ev)
+                for ev in rc_state_hook.EVENTS
+                if isinstance(s2["hooks"].get(ev), list)
+            )
+        )  # our hook gone from every well-formed event
+        self.assertEqual(
+            s2["hooks"].get("Stop"), "not-a-list"
+        )  # corrupt real event skipped
+        self.assertEqual(
+            s2["hooks"].get("WeirdEvent"), "not-a-list"
+        )  # unrelated untouched
+        # malformed JSON: leave it, report it — never clobber or crash
+        Path(rc_state_hook.SETTINGS).write_text("{bad json")
+        self.assertIn("could not parse", rc_state_hook.remove_hook("/r"))
+        self.assertEqual(Path(rc_state_hook.SETTINGS).read_text(), "{bad json")
 
     def test_unknown_event_fails_loud(self):
         # an event the vocabulary lacks used to paint "working"; it must crash instead
@@ -278,6 +384,20 @@ class HealthcheckTest(unittest.TestCase):
         )
         rc_healthcheck.check_disk()
         self.assertFalse(notes)  # 50 GiB free -> quiet
+        # straddle the 5.0 floor so a silent bump (5.0 -> 2.0) can't pass, and pin the < edge
+        gib = 1024**3
+        notes.clear()
+        rc_healthcheck.os.statvfs = lambda p: SimpleNamespace(
+            f_frsize=1, f_bavail=int(4.9 * gib)
+        )
+        rc_healthcheck.check_disk()
+        self.assertTrue(notes)  # 4.9 GiB < 5.0 -> alert
+        notes.clear()
+        rc_healthcheck.os.statvfs = lambda p: SimpleNamespace(
+            f_frsize=1, f_bavail=int(5.1 * gib)
+        )
+        rc_healthcheck.check_disk()
+        self.assertFalse(notes)  # 5.1 GiB -> quiet
 
     def test_check_launcher_returns_version_up_and_alerts_down(self):
         keep(self, (rc_healthcheck, "notify"), (rc_healthcheck, "_open"))

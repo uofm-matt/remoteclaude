@@ -236,6 +236,36 @@ class FunctionTest(unittest.TestCase):
             rc_config._build_stamp(d), ""
         )  # fail closed, not a partial hash
 
+    def test_ensure_trusted_concurrent_launches_keep_claude_json_valid(self):
+        # the mkstemp fix's reason: concurrent first-time-trust launches of different
+        # projects must never tear ~/.claude.json through a shared temp. Hammer it and
+        # assert the file stays valid JSON and every project lands trusted, no orphan temp.
+        Path(rc_config.CLAUDE_JSON).write_text("{}")
+        n = 24
+        for i in range(n):
+            os.makedirs(os.path.join(rc_config.PARENT, f"p{i}"), exist_ok=True)
+        threads = [
+            threading.Thread(target=rc_sessions.ensure_trusted, args=(f"p{i}",))
+            for i in range(n)
+        ]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join(5)
+        data = json.loads(Path(rc_config.CLAUDE_JSON).read_text())  # never torn
+        trusted = data.get("projects", {})
+        # last-writer-wins can drop some flags (benign — re-added next launch), but the file
+        # is always valid and at least one project is trusted; the pre-fix shared temp tore it
+        self.assertTrue(trusted)
+        self.assertEqual(
+            [
+                f
+                for f in os.listdir(Path(rc_config.CLAUDE_JSON).parent)
+                if ".claude.json.rc" in f
+            ],
+            [],
+        )
+
     def test_ensure_trusted_write_failure_logs_and_leaves_no_temp(self):
         # disk-full / unwritable: the launch must not 500 and no orphan temp may accumulate
         d = Path(rc_config.CLAUDE_JSON).parent

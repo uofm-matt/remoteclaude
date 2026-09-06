@@ -13,11 +13,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install ruff tzdata coverage bandit
+      - run: pip install ruff tzdata coverage bandit ty
       - name: Lint (real errors — F/E9 floor from pyproject)
         run: ruff check .
       - name: Format (ruff format, adopted 2026-09-04)
         run: ruff format --check .
+      - name: Typecheck (shipped modules; whole-tree is noisy with test scaffolding)
+        run: ty check rc_*.py
       - name: Security scan (Medium+; deliberate B104/B310 skipped in pyproject)
         run: bandit -c pyproject.toml -q -r . --severity-level medium
       - name: Tests + coverage floor (aggregate and per-file)

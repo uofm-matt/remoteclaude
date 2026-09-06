@@ -33,9 +33,8 @@ SHARE = os.path.realpath(
 PORT = int(
     os.environ.get("RC_LAUNCHER_PORT") or "8787"
 )  # empty env must not ValueError
-MIN_FREE_GB = (
-    5.0  # absolute floor beats a percent: 10% of 1TB is still 100GB of false calm
-)
+# absolute floor beats a percent: 10% of 1 TB is still 100 GB of false calm
+MIN_FREE_GB = 5.0
 LIVENESS_TIMEOUT = 5.0
 # open() past any HTTP_PROXY: a corporate proxy must not intercept the localhost probe and
 # report the launcher down. Named so tests can stub it.

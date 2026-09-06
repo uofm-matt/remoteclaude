@@ -67,27 +67,7 @@ chmod 700 "$SHARE_DIR"
 
 # 4. register the turn-state hook (guarded by $RC_REMOTE so it only fires for
 #    phone-driven sessions) for desk-side awareness of live remote turns.
-RC_HOOK_CMD="$("$PY" "$REPO/rc_state_hook.py" --hook-command "$REPO")"
-[ -n "$RC_HOOK_CMD" ] || { echo "could not derive the hook command" >&2; exit 1; }
-export RC_HOOK_CMD
-"$PY" - <<'PY'
-import json, os
-p = os.path.expanduser("~/.claude/settings.json")
-d = json.load(open(p)) if os.path.exists(p) else {}
-cmd = os.environ["RC_HOOK_CMD"]  # rc_state_hook.py is the one source of this string
-hooks = d.setdefault("hooks", {})
-added = False
-for ev in ["UserPromptSubmit", "Notification", "Stop", "SubagentStop", "SessionStart", "SessionEnd"]:
-    g = hooks.setdefault(ev, [])
-    if not any(h.get("command") == cmd for x in g for h in x.get("hooks", [])):
-        g.append({"hooks": [{"type": "command", "command": cmd}]})
-        added = True
-os.makedirs(os.path.dirname(p), exist_ok=True)
-with open(p, "w") as f:
-    json.dump(d, f, indent=2)
-    f.write("\n")
-print(f"   state hook {'registered' if added else 'already present'} in {p}")
-PY
+"$PY" "$REPO/rc_state_hook.py" --install-hook "$REPO" || { echo "!! hook registration failed"; exit 1; }
 
 # 5. service + login-health watchdog, per OS
 install_launchd() {

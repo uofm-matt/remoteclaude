@@ -40,7 +40,7 @@ This is the whole Mac-side footprint. Take the network items to ops-notes.
 | Piece | What | State |
 |---|---|---|
 | `rc_launcher.py` + `com.matt.rc-launcher` LaunchAgent | always-on web server, one cheap process, binds `0.0.0.0:8787`, token-guarded | installed by `install.sh` |
-| `rc_healthcheck.py` + `com.matt.rc-healthcheck` LaunchAgent | login-health watchdog, runs `claude auth status` every 30 min, notifies if the OAuth login lapses | installed by `install.sh` |
+| `rc_healthcheck.py` + `com.matt.rc-healthcheck` LaunchAgent | health watchdog, every 30 min: `claude auth status` (login), free space (< 5 GiB alert), and a `/version` GET (launcher wedged/down); notifies on any | installed by `install.sh` |
 | `tmux` | holds each launched RC session | `brew install tmux` (was missing) |
 | `claude` binary | `~/.local/bin/claude` v2.1.258, logged in once via `/login` so the OAuth token is cached | present; confirm login |
 | `pmset` | `autorestart 1`, `sleep 0`, `disksleep 0` so it powers back on and stays awake | manual (sudo) |
@@ -66,7 +66,8 @@ a change to a leaf can't reach back into the launcher.
 | `rc_share.py` | the `~/rc-share` boundary, its listing, and the `.rcpart` sweep | `rc_config`, page |
 | `rc_launcher.py` | the HTTP tier: auth, routing, framing, `/files` byte-pushing | `rc_sessions`, `rc_share` |
 | `rc_guard.py` | the desk-side launch guard (attach / takeover / fresh) | `rc_tmux` |
-| `rc_status.py`, `rc_state_hook.py`, `rc_healthcheck.py` | standalone entry points: prompt tag, hook writer, login watchdog | `rc_state` / `rc_claude` |
+| `rc_status.py`, `rc_state_hook.py`, `rc_healthcheck.py` | standalone entry points: prompt tag, hook writer, health watchdog (login + disk + launcher liveness) | `rc_state` / `rc_claude` |
+| `rc_upload.js`, `rc_download.js` | the files page's resumable-upload policy and download size-cap decision, pure and `node --test`-covered | — (spliced into `rc_files_page`) |
 
 `rc_config` exists so the session and file-share clusters can be separate modules at all:
 `launch()` reads `SHARE` and both clusters need `log_event`/`projects()`/`NAME_RE` plus the
@@ -306,13 +307,24 @@ Android share target (`UploadActivity`/`UploadLogic`). Change one, check the oth
    Claude app → Code → green dot for that name. **This is the one thing worth
    confirming empirically** — that a headless `tmux`-launched RC session
    registers and shows the green dot.
+4. After editing any `rc_*.py`: the launcher holds its code in memory, so the edit
+   does nothing until the service restarts. Run `./install.sh --reload` (kickstart on
+   macOS, `systemctl --user restart` on Linux — no reinstall), then
+   `curl -s localhost:8787/version`: the stamp is a hash of the shipped `rc_*.py` and
+   changes when the source does, so a matching new stamp confirms the reload took.
 
 ## Troubleshooting
 
+- **Edited `rc_*.py` and nothing changed**: the launcher serves its in-memory code
+  until restarted. `./install.sh --reload`, then `curl -s localhost:8787/version` — if the
+  stamp didn't change, the reload didn't take. (Same for rotating the token.)
 - **No green dot / session dies immediately**: the cached login expired. Run
   `~/.local/bin/claude` and `/login` again. RC needs the claude.ai OAuth token;
   API keys don't work. The launcher header and the watchdog both surface this;
-  `cat /tmp/rc-healthcheck.log` shows the last few checks (`login=ok …`).
+  `cat /tmp/rc-healthcheck.log` shows the last few checks (`login=ok build=<stamp> …`).
+- **Low-disk or launcher-down alert**: the watchdog also probes free space (alerts under
+  5 GiB on the boot volume or `~/rc-share`) and the launcher itself (GETs `/version`,
+  alerts if it is wedged or crash-looping) — not just the login.
 - **Want the login-lapse alert on your phone, not just the Mac**: the watchdog
   POSTs to `RC_NOTIFY_URL` if set. Pick an [ntfy.sh](https://ntfy.sh) topic,
   subscribe to it in the ntfy app, then re-run `install.sh` with

@@ -57,3 +57,13 @@ Written by `refute.py`; the format is parsed, so keep the `- key: value` shape.
 - oracle: urllib.error.HTTPError subclasses URLError subclasses OSError, so a non-2xx is caught (verified in the class hierarchy); install.sh defines PORT at line 10 and the --reload block is inserted after line 20, so PORT is always set first (read the file)
 - cost: reading the exception hierarchy and the install.sh line order
 - unmeasured: none
+
+## Changing PORT to os.environ.get('RC_LAUNCHER_PORT') or '8787' breaks an explicitly configured port 0 by coercing it to the default
+
+- scope: `rc_config.py`
+- verdict: REFUTED
+- measured: 2026-09-06
+- commit: f4b97a87cbdc1b7b70c1a805f36283ac6e1f2e17
+- oracle: os.environ.get returns a string; the string '0' is truthy, so "0" or "8787" -> "0" -> int("0") -> 0. Only None (unset) or "" (empty) fall through to the default. Verified: RC_LAUNCHER_PORT=0 python3 -c 'import rc_config;print(rc_config.PORT)' prints 0
+- cost: one interpreter line
+- unmeasured: none

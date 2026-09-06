@@ -2,6 +2,24 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- Paid down the 2026-09-06 audit (all nine findings).
+  - **Docs caught up to the trio.** RUNBOOK Verify/Troubleshooting now cover `install.sh
+    --reload` + `curl :8787/version` (the stale-serve fix was undocumented); the watchdog is
+    described as login + disk + launcher-liveness (not login-only) in RUNBOOK and README, log
+    sample updated to `login=ok build=<stamp>`; module maps gained rc_upload.js/rc_download.js
+    and rc_claude/rc_state.
+  - **Single-sourced the settings.json hook merge.** rc_state_hook gained install_hook/
+    remove_hook (+ `--install-hook`/`--remove-hook` CLI); install.sh/uninstall.sh call them
+    instead of embedding the JSON-merge Python twice. Hardened per the panel: remove iterates
+    only the six EVENTS and skips non-list entries (an unrelated/corrupt event can't abort
+    uninstall), empty/malformed settings.json is left unchanged with a message, and it is the
+    exact inverse of install. First real test coverage of that merge.
+  - **Small fixes.** rc_config PORT tolerates an empty `RC_LAUNCHER_PORT` (matches the
+    healthcheck); MIN_FREE_GB straddled at 5.0 so the floor can't silently drift; a tracked
+    `tests/test_size_cap.py` enforces the 375-line module cap (was honor-system, silently
+    violated) and `.claude/review.toml` bumped to 375 (rc_sessions is honest work, not a
+    split); `ty check rc_*.py` added to CI; _build_stamp docstring corrected; an
+    ensure_trusted concurrency stress test. Two trailing-comment reflows cleaned.
 ## 2026-09-06
 
 - Operational trio + a concurrency fix (from the 2026-09-06 improvement analysis).
