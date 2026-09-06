@@ -90,6 +90,17 @@ class DeskTest(MockedToolsCase):
         }
         self.assertEqual(rc_desk.desk_projects(), ["proj"])
         # second call inside the TTL is served from cache: no new pgrep forked
+
+    def test_desk_projects_maps_grouped_project_to_group_name(self):
+        # a desk claude inside a category maps to "group/name" (matching projects()), else the
+        # badge never matches the launcher list and the desk dot vanishes for grouped projects
+        self.addCleanup(setattr, rc_config, "GROUPS", rc_config.GROUPS)
+        rc_config.GROUPS = frozenset({"work"})
+        self.desk = {
+            "111": desk(os.path.join(rc_config.PARENT, "work", "aws")),  # grouped
+            "222": desk(os.path.join(rc_config.PARENT, "flat")),  # flat, unchanged
+        }
+        self.assertEqual(rc_desk.desk_projects(), ["flat", "work/aws"])
         scans = self._pgreps()
         rc_desk.desk_projects()
         self.assertEqual(self._pgreps(), scans)

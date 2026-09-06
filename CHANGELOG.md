@@ -22,6 +22,19 @@ Human-facing chronological record; newest first. One entry per change — what a
     ensure_trusted concurrency stress test. Two trailing-comment reflows cleaned.
 ## 2026-09-06
 
+- Two-level project support (REORG-PLAN Phase 1), opt-in and transition-safe. Set
+  `RC_PROJECT_GROUPS` (comma-separated, e.g. `work,hobby`) and any top-level dir with that
+  name becomes a category: its children list as `group/name`, while every other dir stays a
+  flat project. Empty/unset = flat, so it is a no-op until you declare buckets. `session_name`
+  swaps the `/` for `+` (a slash breaks tmux `send-keys` targeting; `+` round-trips and NAME_RE
+  forbids it in a segment); `running()` maps it back. Verified live: `claude remote-control
+  --name work/aws` accepts the slash. Defect pass + 3-model panel hardened it: groups are
+  opt-in (an empty install default had made a five-name code default inert), `create()` rejects
+  a category name (it bypasses the membership guard, would spawn an unstoppable `rc-<group>`),
+  the desk badge maps grouped projects to `group/name` (else the dot vanished), the inner
+  category listdir is guarded, and `RC_PROJECT_GROUPS` trims whitespace. Traversal and the
+  `+` round-trip confirmed safe (running() output never reaches a path op). Not done here:
+  grouped UI section headers and nested project creation from the phone.
 - Project names must now start with a letter or digit — leading-underscore meta/scratch dirs
   (`_archive`, `_baselines`) were listing as projects, the underscore equivalent of the dot-dir
   bug. `NAME_RE` is `^[A-Za-z0-9][A-Za-z0-9_-]*$`: interior `_`/`-` stay valid (`my_project`),

@@ -67,3 +67,13 @@ Written by `refute.py`; the format is parsed, so keep the `- key: value` shape.
 - oracle: os.environ.get returns a string; the string '0' is truthy, so "0" or "8787" -> "0" -> int("0") -> 0. Only None (unset) or "" (empty) fall through to the default. Verified: RC_LAUNCHER_PORT=0 python3 -c 'import rc_config;print(rc_config.PORT)' prints 0
 - cost: one interpreter line
 - unmeasured: none
+
+## The '/'->'+' session-name substitution and running()'s '+'->'/' inverse let a crafted tmux session (e.g. rc-x+..+.ssh) become an escaping proj like x/../.ssh, and project_dir(os.path.join(PARENT,proj)) has no containment check, so a '..' proj escapes PARENT
+
+- scope: `rc_config.py`
+- verdict: REFUTED
+- measured: 2026-09-06
+- commit: 92baeedcc9a14081cf27bd0ff91332bd2bd1ef6f
+- oracle: grep: running() feeds only status_payload['running'] (rc_sessions.py:63) -> the page RUNNING set for display; it is never passed to project_dir or any path op. Every project_dir caller passes a NAME_RE-validated single segment (create, which also has no '/'), a membership-guarded proj (launch/stop/git/desk via 'proj not in projects()'), or a real os.listdir entry (projects). NAME_RE forbids '+' and '/' in a segment, so no launcher-created session name is ambiguous. A crafted external rc-* session yields only a spurious display badge, never a filesystem op.
+- cost: two greps (running() consumers, project_dir callers)
+- unmeasured: none

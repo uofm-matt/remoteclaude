@@ -292,6 +292,14 @@ class OrchestrationTest(MockedToolsCase):
         self.responses = {"list-sessions": proc(stdout="rc-alpha\nrc-beta\nother\n")}
         self.assertEqual(rc_tmux.running(), {"alpha", "beta"})
 
+    def test_grouped_project_session_name_roundtrips_through_the_plus(self):
+        # a group/name project can't be a raw tmux session name ('/' breaks send-keys), so
+        # session_name swaps it for '+'; running() must map it back so the badge matches
+        self.assertEqual(rc_tmux.session_name("work/aws"), "rc-work+aws")
+        self.assertEqual(rc_tmux.session_name("flat"), "rc-flat")  # flat unchanged
+        self.responses = {"list-sessions": proc(stdout="rc-work+aws\nrc-flat\n")}
+        self.assertEqual(rc_tmux.running(), {"work/aws", "flat"})
+
         def boom(cmd, **kw):
             raise FileNotFoundError
 

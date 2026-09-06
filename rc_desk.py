@@ -84,6 +84,15 @@ def desktop_sessions(proj: str) -> list[int]:
     ]
 
 
+def _rel_project(rel: str) -> str:
+    """The project a desk cwd belongs to: "group/name" when the first path segment is a
+    category (matching projects()' shape), else the first segment."""
+    parts = rel.split(os.sep)
+    if parts[0] in cfg.GROUPS and len(parts) > 1:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0]
+
+
 def _desk_scan() -> list[str]:
     """Projects with a live desk claude rooted inside them. Current Claude Code
     auto-pairs interactive sessions with the phone app, so these are phone-drivable —
@@ -93,7 +102,7 @@ def _desk_scan() -> list[str]:
     root = cfg.PARENT + os.sep
     return sorted(
         {
-            cwd.removeprefix(root).split(os.sep)[0]
+            _rel_project(cwd.removeprefix(root))
             for _, cwd in _desk_claude_pids()
             if cwd.startswith(root)
         }

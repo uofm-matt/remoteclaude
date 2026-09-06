@@ -92,6 +92,11 @@ class FunctionTest(unittest.TestCase):
         # shell/tmux arg-injection shape) are rejected; interior _ and - stay valid
         self.assertEqual(rc_sessions.create("_archive")[0], "badname")
         self.assertEqual(rc_sessions.create("-rf")[0], "badname")
+        # a category name is not a project: /create bypasses the membership guard, so this
+        # would otherwise spawn an unlistable, unstoppable rc-<group> session
+        self.addCleanup(setattr, rc_config, "GROUPS", rc_config.GROUPS)
+        rc_config.GROUPS = frozenset({"work"})
+        self.assertEqual(rc_sessions.create("work")[0], "badname")
 
     def test_create_refuses_existing(self):
         self._proj("dup")
@@ -109,6 +114,51 @@ class FunctionTest(unittest.TestCase):
         self.assertEqual(
             rc_config.projects(), ["alpha", "beta_1"]
         )  # beta_1: interior _ ok
+
+    def test_project_groups_are_opt_in_from_env(self):
+        # unset -> empty (flat); set -> parsed; empty string -> empty (the install.sh default,
+        # which must agree with the code default or the service silently lists flat)
+        def groups(env):
+            e = {k: v for k, v in os.environ.items() if k != "RC_PROJECT_GROUPS"}
+            if env is not None:
+                e["RC_PROJECT_GROUPS"] = env
+            out = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import rc_config; print(sorted(rc_config.GROUPS))",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=os.path.dirname(os.path.abspath(rc_config.__file__)),
+                env=e,
+            ).stdout.strip()
+            return out
+
+        self.assertEqual(groups(None), "[]")  # unset -> flat
+        self.assertEqual(
+            groups(""), "[]"
+        )  # install.sh's empty default -> flat (must match)
+        self.assertEqual(groups("work,hobby"), "['hobby', 'work']")  # opt in
+        self.assertEqual(
+            groups("work, hobby "), "['hobby', 'work']"
+        )  # whitespace trimmed
+
+    def test_projects_descends_group_dirs_one_level(self):
+        # a dir named in GROUPS is a category (list its children as group/name); any other
+        # dir is a flat project and its children are NOT descended; a category never
+        # self-lists. Mixed trees (some flat, some grouped) are the transition state.
+        self.addCleanup(setattr, rc_config, "GROUPS", rc_config.GROUPS)
+        rc_config.GROUPS = frozenset({"work", "hobby"})
+        self._proj("flatproj")
+        os.makedirs(os.path.join(rc_config.PARENT, "work", "aws"))
+        os.makedirs(os.path.join(rc_config.PARENT, "work", "msd"))
+        os.makedirs(os.path.join(rc_config.PARENT, "hobby", "pinball"))
+        os.makedirs(os.path.join(rc_config.PARENT, "notagroup", "sub"))  # not a group
+        self.assertEqual(
+            rc_config.projects(),
+            ["flatproj", "hobby/pinball", "notagroup", "work/aws", "work/msd"],
+        )  # grouped as group/name, notagroup flat (sub ignored), work/hobby never self-list
 
     # --- session_states() ---
 

@@ -352,6 +352,10 @@ def create(proj: str) -> tuple[str, str | None]:
             "badname",
             "start with a letter or digit, then letters/digits/dash/underscore",
         )
+    # a category dir, not a project: /create bypasses the membership guard, so this would
+    # otherwise spawn an rc-<group> session projects() never lists and /stop can't reach
+    if proj in cfg.GROUPS:
+        return "badname", f"{proj} is a category"
     path = cfg.project_dir(proj)
     try:
         os.makedirs(path)

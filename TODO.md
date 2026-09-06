@@ -293,6 +293,11 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Later — unscheduled
 
+- [ ] **Nested-projects follow-ups (Phase 1 landed opt-in 2026-09-06).** Grouped UI section
+  headers on the launcher page (per-`group/` sections, not one flat list — the plan's optional
+  item 6); and creating a project *into* a group from the phone (`create()` is flat-only today,
+  a name in `GROUPS` is rejected). Both are additive; the flat list + filter already work on
+  `group/name` strings. (From building REORG-PLAN Phase 1.)
 > **DONE 2026-09-05** — switched to `time.monotonic()` (deadline + loop); the test and `_harness._STDLIB` now patch/restore `time.monotonic`.
 
 - [ ] **`rc_desk.takeover()` times its SIGTERM grace with `time.time()`; `rc_tmux.graceful_stop()`

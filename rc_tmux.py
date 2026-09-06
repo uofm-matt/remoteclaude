@@ -32,7 +32,9 @@ def tmux(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def session_name(proj: str) -> str:
-    return f"rc-{proj}"
+    # a group/name project's "/" is a tmux target metachar (send-keys can't resolve it);
+    # "+" round-trips and NAME_RE forbids it in a segment, so it's a safe separator
+    return f"rc-{proj.replace('/', '+')}"
 
 
 def has_session(sess: str) -> bool:
@@ -46,7 +48,9 @@ def running() -> set[str]:
     except FileNotFoundError:  # tmux not installed yet; status is non-essential
         return set()
     return {
-        line.removeprefix("rc-") for line in out.splitlines() if line.startswith("rc-")
+        line.removeprefix("rc-").replace("+", "/")
+        for line in out.splitlines()
+        if line.startswith("rc-")
     }
 
 

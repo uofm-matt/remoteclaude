@@ -108,6 +108,16 @@ def log_event(action: str, proj: str, result: str) -> None:
     )
 
 
+# Top-level dirs whose NAME is a category to descend into one level (their children list as
+# "group/name"), not a project. OPT-IN: set RC_PROJECT_GROUPS (comma-separated, e.g.
+# "work,hobby") to enable two-level listing; empty/unset means a flat ~/projects. install.sh
+# writes "" by default, so the code default must be "" too or the two disagree — flat until
+# the operator declares their buckets.
+GROUPS = frozenset(
+    g.strip() for g in os.environ.get("RC_PROJECT_GROUPS", "").split(",") if g.strip()
+)
+
+
 def project_dir(proj: str) -> str:
     """A project's on-disk root under PARENT — read as cfg.project_dir() at call time,
     so a test that redirects PARENT reaches every caller (rc_git/rc_desk/rc_sessions)."""
@@ -115,13 +125,32 @@ def project_dir(proj: str) -> str:
 
 
 def projects() -> list[str]:
+    """Every launchable project, flat or one level under a category. A top-level dir whose
+    name is in GROUPS is a category and lists its children as "group/name"; any other dir is
+    a flat project. So a half-migrated tree (some flat, some grouped) lists correctly, and a
+    project's own subdirs are never taken for projects — descent is one level, into GROUPS
+    only, and a category dir never lists as a project itself."""
     try:
         entries = os.listdir(PARENT)
     except FileNotFoundError:
         return []
-    return sorted(
-        e for e in entries if NAME_RE.match(e) and os.path.isdir(project_dir(e))
-    )
+    out = []
+    for e in entries:
+        if not (NAME_RE.match(e) and os.path.isdir(project_dir(e))):
+            continue
+        if e in GROUPS:
+            group = project_dir(e)
+            with contextlib.suppress(
+                OSError
+            ):  # vanished/unreadable category contributes none
+                out += [
+                    f"{e}/{s}"
+                    for s in os.listdir(group)
+                    if NAME_RE.match(s) and os.path.isdir(os.path.join(group, s))
+                ]
+        else:
+            out.append(e)
+    return sorted(out)
 
 
 class TTLCache[T]:
