@@ -22,6 +22,11 @@ Human-facing chronological record; newest first. One entry per change — what a
     ensure_trusted concurrency stress test. Two trailing-comment reflows cleaned.
 ## 2026-09-06
 
+- Project names must now start with a letter or digit — leading-underscore meta/scratch dirs
+  (`_archive`, `_baselines`) were listing as projects, the underscore equivalent of the dot-dir
+  bug. `NAME_RE` is `^[A-Za-z0-9][A-Za-z0-9_-]*$`: interior `_`/`-` stay valid (`my_project`),
+  a leading `_` or `-` (the latter a shell/tmux arg-injection shape) is rejected, in one gate
+  shared by `projects()`, `create()`, `stop()` and the page JS. Confirmed live: 74 -> 72.
 - Operational trio + a concurrency fix (from the 2026-09-06 improvement analysis).
   - **Healthcheck now watches more than login.** rc_healthcheck gained `check_disk` (statvfs
     on / and the share, alert < 5 GiB — the failure that silently downed the launcher) and

@@ -88,6 +88,10 @@ class FunctionTest(unittest.TestCase):
         # so the session would be untargetable and stop() would report a phantom success
         self.assertEqual(rc_sessions.create("a.b")[0], "badname")
         self.assertEqual(rc_sessions.create(".claude")[0], "badname")
+        # must start alphanumeric: leading _ (meta dirs like _archive) and leading - (a
+        # shell/tmux arg-injection shape) are rejected; interior _ and - stay valid
+        self.assertEqual(rc_sessions.create("_archive")[0], "badname")
+        self.assertEqual(rc_sessions.create("-rf")[0], "badname")
 
     def test_create_refuses_existing(self):
         self._proj("dup")
@@ -100,8 +104,11 @@ class FunctionTest(unittest.TestCase):
         self._proj("alpha")
         self._proj("with space")  # NAME_RE rejects the space
         self._proj(".hidden")  # a dot-dir (.claude, .ruff_cache) is not a project
+        self._proj("_meta")  # a leading-underscore meta dir (_archive) is not a project
         open(os.path.join(rc_config.PARENT, "afile"), "w").close()  # a file, not a dir
-        self.assertEqual(rc_config.projects(), ["alpha", "beta_1"])
+        self.assertEqual(
+            rc_config.projects(), ["alpha", "beta_1"]
+        )  # beta_1: interior _ ok
 
     # --- session_states() ---
 
@@ -363,8 +370,10 @@ class FunctionTest(unittest.TestCase):
         self.assertEqual(out, b"long + short")
 
     def test_page_placeholder_named_project_not_reinterpreted(self):
-        # a project dir named like a placeholder — NAME_RE permits it
-        self._proj("__LOGIN__")
+        # a project name embedding a real placeholder token: NAME_RE now needs a leading
+        # alphanumeric, but an interior __LOGIN__ still collides — single-pass fill must not
+        # rewrite the name where it sits in the PROJECTS data.
+        self._proj("x__LOGIN__")
         stubs = {
             rc_sessions: {"login_status": lambda: "ok", "session_states": lambda: {}},
             rc_tmux: {"running": lambda: set()},
@@ -376,7 +385,7 @@ class FunctionTest(unittest.TestCase):
                 self.addCleanup(setattr, module, name, getattr(module, name))
                 setattr(module, name, stub)
         out = rc_sessions.page().decode()
-        self.assertIn('["__LOGIN__"]', out)  # the name survives as data in PROJECTS...
+        self.assertIn('["x__LOGIN__"]', out)  # the name survives as data in PROJECTS...
         # ...and the real __LOGIN__ slot filled, not clobbered
         # (the old chained-replace produced [""ok""] here — a broken script)
         self.assertIn('LOGIN="ok"', out)

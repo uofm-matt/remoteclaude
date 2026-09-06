@@ -95,7 +95,7 @@ text-align:center}
 <script>
 const PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__), STARTING=new Set();
 let GITSTATES=__GITSTATES__;
-const NAME_RE=/^[A-Za-z0-9_-]+$/;
+const NAME_RE=/^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 let LOGIN=__LOGIN__, STATES=__STATES__, DESK=new Set(__DESK__), noTap=0;
 const $=s=>document.querySelector(s), RK='rc_recent', PK='rc_pinned';
 const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -222,7 +222,7 @@ $('#q').addEventListener('keydown',e=>{if(e.key!=='Enter')return;
 $('#newbtn').onclick=()=>{
   const n=(prompt('New project name',$('#q').value.trim())||'').trim();
   if(!n)return;
-  if(!NAME_RE.test(n)){toast('\\u2717 bad name: letters, digits, _ - only');return;}
+  if(!NAME_RE.test(n)){toast('\\u2717 bad name: start with a letter or digit');return;}
   if(PROJECTS.includes(n)){toast(n+' already exists \\u2014 tap it to start');return;}
   createProj(n);};
 authBar();render();setInterval(poll,5000);

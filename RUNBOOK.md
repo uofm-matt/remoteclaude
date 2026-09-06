@@ -129,7 +129,8 @@ To start a brand-new project, type a name that matches nothing: a dashed
 **＋ create & start** row appears (or just press Enter). It makes the folder under
 `~/projects`, runs `git init`, writes a one-line `CLAUDE.md`, marks the dir
 trusted, and launches the RC session — after that it behaves like any other
-project. Names allow letters, digits, dash, underscore only (no dot — a dotted
+project. Names must start with a letter or digit, then letters/digits/dash/underscore
+(no dot — a dotted
 name is an untargetable tmux session; no path
 separators), so a typed name can't escape `~/projects`.
 

@@ -348,7 +348,10 @@ def create(proj: str) -> tuple[str, str | None]:
     session launches anyway. The route launches it after this returns 'created'.
     """
     if not cfg.NAME_RE.match(proj):
-        return "badname", "letters, digits, dash, underscore only"
+        return (
+            "badname",
+            "start with a letter or digit, then letters/digits/dash/underscore",
+        )
     path = cfg.project_dir(proj)
     try:
         os.makedirs(path)
