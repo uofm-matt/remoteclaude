@@ -38,6 +38,7 @@ class FunctionTest(unittest.TestCase):
         restore_globals(self)
         self.tmp = tempfile.mkdtemp()
         rc_config.PARENT = os.path.join(self.tmp, "projects")
+        rc_config.ROOTS_FILE = Path(self.tmp, "roots.json")
         os.makedirs(rc_config.PARENT)
         rc_sessions.STATE_DIR = Path(self.tmp, "state")
         rc_config.CLAUDE_JSON = os.path.join(self.tmp, "claude.json")
@@ -97,6 +98,24 @@ class FunctionTest(unittest.TestCase):
         self.addCleanup(setattr, rc_config, "GROUPS", rc_config.GROUPS)
         rc_config.GROUPS = frozenset({"work"})
         self.assertEqual(rc_sessions.create("work")[0], "badname")
+        # a root label is likewise not a flat project name
+        media = os.path.realpath(
+            os.path.join(os.path.dirname(rc_config.PARENT), "media")
+        )
+        os.makedirs(media)
+        rc_config.add_root(media)
+        self.assertEqual(rc_sessions.create("media")[0], "badname")
+        # even a configured-but-currently-DOWN root reserves its label, so create() can't
+        # mkdir PARENT/<label> and permanently shadow it when the root comes back
+        import json as _j
+
+        Path(rc_config.ROOTS_FILE).write_text(
+            _j.dumps([os.path.join(self.tmp, "gone")])
+        )
+        self.assertNotIn(
+            "gone", rc_config.extra_roots()
+        )  # dir doesn't exist -> not valid
+        self.assertEqual(rc_sessions.create("gone")[0], "badname")  # but still reserved
 
     def test_create_refuses_existing(self):
         self._proj("dup")
@@ -143,6 +162,84 @@ class FunctionTest(unittest.TestCase):
         self.assertEqual(
             groups("work, hobby "), "['hobby', 'work']"
         )  # whitespace trimmed
+
+    def test_extra_roots_union_and_collisions(self):
+        # env + file union; a basename that is a GROUP, an existing PARENT dir, or a dup drops
+        self.addCleanup(setattr, rc_config, "GROUPS", rc_config.GROUPS)
+        rc_config.GROUPS = frozenset({"work"})
+        os.makedirs(os.path.join(rc_config.PARENT, "alpha"))  # a flat project
+        base = os.path.dirname(rc_config.PARENT)
+        media = os.path.realpath(os.path.join(base, "media"))
+        os.makedirs(media)
+        os.makedirs(os.path.realpath(os.path.join(base, "work")))  # basename == a GROUP
+        os.makedirs(os.path.realpath(os.path.join(base, "alpha")))  # == a flat project
+        Path(rc_config.ROOTS_FILE).write_text(
+            json.dumps([media, os.path.join(base, "work"), os.path.join(base, "alpha")])
+        )
+        self.assertEqual(
+            rc_config.extra_roots(), {"media": media}
+        )  # only the clean one
+
+    def test_project_dir_resolves_root_and_confines_the_name(self):
+        self.addCleanup(setattr, rc_config, "GROUPS", rc_config.GROUPS)
+        rc_config.GROUPS = frozenset({"grp"})
+        base = os.path.dirname(rc_config.PARENT)
+        media = os.path.realpath(os.path.join(base, "media"))
+        os.makedirs(media)
+        Path(rc_config.ROOTS_FILE).write_text(json.dumps([media]))
+        self.assertEqual(
+            rc_config.project_dir("media/movie"), os.path.join(media, "movie")
+        )
+        self.assertEqual(
+            rc_config.project_dir("flat"), os.path.join(rc_config.PARENT, "flat")
+        )
+        self.assertEqual(
+            rc_config.project_dir("grp/x"), os.path.join(rc_config.PARENT, "grp/x")
+        )
+        # a crafted name segment must NOT escape the root — falls back under PARENT
+        self.assertEqual(
+            rc_config.project_dir("media/../etc"),
+            os.path.join(rc_config.PARENT, "media/../etc"),
+        )
+
+    def test_add_root_validation_matrix_and_listing(self):
+        base = os.path.dirname(rc_config.PARENT)
+        good = os.path.join(base, "extra")
+        os.makedirs(os.path.join(good, "sub"))
+        self.assertEqual(rc_config.add_root(good)[0], "added")
+        self.assertEqual(rc_config.add_root(good)[0], "exists")  # idempotent
+        self.assertEqual(rc_config.add_root("")[0], "badpath")
+        self.assertEqual(rc_config.add_root("/no/such/dir")[0], "badpath")
+        self.assertEqual(rc_config.add_root("/")[0], "badpath")  # forbidden
+        self.assertEqual(rc_config.add_root("~")[0], "badpath")  # $HOME forbidden
+        os.makedirs(os.path.join(rc_config.PARENT, "dup"))  # a flat project
+        os.makedirs(os.path.join(base, "dup"))
+        self.assertEqual(rc_config.add_root(os.path.join(base, "dup"))[0], "collision")
+        self.assertIn("extra/sub", rc_config.projects())  # the added root's child lists
+        # a symlinked child of an added root pointing OUTSIDE it must not list (realpath guard)
+        os.symlink("/etc", os.path.join(good, "escape"))
+        self.assertNotIn("extra/escape", rc_config.projects())
+        # nesting a new root inside an existing one is refused (ambiguous label/listing)
+        os.makedirs(os.path.join(good, "nested"))
+        self.assertEqual(
+            rc_config.add_root(os.path.join(good, "nested"))[0], "collision"
+        )
+
+    def test_add_root_unlinks_temp_on_write_failure(self):
+        base = os.path.dirname(rc_config.PARENT)
+        good = os.path.join(base, "wf")
+        os.makedirs(good)
+        real = rc_sessions.json.dump if False else None  # noqa: F841 (placeholder)
+        import rc_config as _c
+
+        orig = _c.json.dump
+        _c.json.dump = lambda *a, **k: (_ for _ in ()).throw(OSError("no space"))
+        self.addCleanup(setattr, _c.json, "dump", orig)
+        self.assertEqual(rc_config.add_root(good)[0], "failed")
+        leftover = [
+            n for n in os.listdir(rc_config.ROOTS_FILE.parent) if n.startswith("roots.")
+        ]
+        self.assertEqual(leftover, [])  # temp unlinked
 
     def test_projects_descends_group_dirs_one_level(self):
         # a dir named in GROUPS is a category (list its children as group/name); any other

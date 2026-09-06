@@ -15,12 +15,14 @@ server checks for the token at startup.
 import contextlib
 import functools
 import hashlib
+import json
 import os
 import re
 import socket
 import threading
 import time
 from collections.abc import Callable
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -52,6 +54,14 @@ def _read_token() -> str:
 
 
 TOKEN = _read_token()
+# Additional project roots beyond PARENT, runtime-editable so a root added from the phone
+# survives with no service reload. JSON list of absolute paths (JSON, not lines, so a path
+# can't inject a second root via an embedded newline), 0600, beside the token.
+ROOTS_FILE = Path(
+    os.path.expanduser(
+        os.environ.get("RC_LAUNCHER_ROOTS_FILE", "~/.config/rc-launcher/roots.json")
+    )
+)
 PORT = int(
     os.environ.get("RC_LAUNCHER_PORT") or "8787"
 )  # empty env must not ValueError
@@ -118,9 +128,137 @@ GROUPS = frozenset(
 )
 
 
+def _forbidden_root(path: str) -> bool:
+    """A realpath'd root too broad or too central to add: /, $HOME or any ancestor of it,
+    the config dir, or anything overlapping PARENT. A root must be a specific projects dir,
+    not a whole tree. (The token already grants code execution, so this is footgun-guarding,
+    not a security boundary — but adding / would fork a git per top-level dir every poll.)"""
+    home = os.path.realpath(os.path.expanduser("~"))
+    if path == "/" or (home + os.sep).startswith(
+        path + os.sep
+    ):  # /, $HOME, an ancestor
+        return True
+    if path == os.path.realpath(str(ROOTS_FILE.parent)):
+        return True
+    parent = os.path.realpath(PARENT)  # realpath so a symlinked PARENT still overlaps
+    return (
+        path == parent
+        or path.startswith(parent + os.sep)
+        or parent.startswith(path + os.sep)
+    )
+
+
+def _root_lines() -> list[str]:
+    """Raw root paths from the env (RC_PROJECT_ROOTS, comma/colon-separated) then the JSON
+    file. A malformed/absent file contributes nothing."""
+    env = [
+        p
+        for p in re.split(r"[,:]", os.environ.get("RC_PROJECT_ROOTS", ""))
+        if p.strip()
+    ]
+    from_file: list[str] = []
+    with contextlib.suppress(OSError, json.JSONDecodeError):
+        data = json.loads(ROOTS_FILE.read_text())
+        if isinstance(data, list):
+            from_file = [p for p in data if isinstance(p, str)]
+    return env + from_file
+
+
+def extra_roots() -> dict[str, str]:
+    """label -> realpath'd dir for each valid additional root; the label is the basename.
+    Read fresh each call (a small JSON read) so a UI-added root shows on the next poll with
+    no reload. A root that vanished, is forbidden, whose basename collides with a GROUP or a
+    primary project, or repeats an earlier label is skipped — a stale file degrades, never
+    crashes. PARENT is never here, so a flat project can't be shadowed."""
+    out: dict[str, str] = {}
+    for raw in _root_lines():
+        path = os.path.realpath(os.path.expanduser(raw.strip()))
+        label = os.path.basename(path)
+        if (
+            not NAME_RE.match(label)
+            or label in GROUPS
+            or label in out
+            or _forbidden_root(path)
+            or not os.path.isdir(path)
+            or os.path.isdir(os.path.join(PARENT, label))
+        ):
+            continue
+        out[label] = path
+    return out
+
+
+def configured_root_labels() -> set[str]:
+    """Basenames of every root the config names — even one currently invalid (a down mount) —
+    so create() can't mkdir PARENT/<label> and permanently shadow a root that's just offline."""
+    return {
+        os.path.basename(os.path.realpath(os.path.expanduser(r.strip())))
+        for r in _root_lines()
+    }
+
+
+def add_root(raw: str) -> tuple[str, str | None]:
+    """Validate a candidate root and append it to ROOTS_FILE (atomic JSON). Returns a
+    (status, reason): added / exists / badpath / collision / failed. Realpath'd and stored
+    resolved, so a symlinked root can't later escape a prefix check."""
+    if not raw.strip():
+        return "badpath", "empty path"
+    path = os.path.realpath(os.path.expanduser(raw.strip()))
+    if _forbidden_root(path) or not os.path.isdir(path):
+        return "badpath", "not a usable directory (or a forbidden/overlapping location)"
+    try:
+        os.listdir(
+            path
+        )  # readable? probe once, so a dead mount is rejected here not per poll
+    except OSError as e:
+        return "badpath", f"unreadable: {e}"
+    label = os.path.basename(path)
+    if not NAME_RE.match(label):
+        return "badpath", "the directory name must start with a letter or digit"
+    if label in GROUPS or os.path.isdir(os.path.join(PARENT, label)):
+        return "collision", f"'{label}' already names a group or a project"
+    current = extra_roots()
+    if current.get(label) == path:
+        return "exists", None
+    if label in current:
+        return "collision", f"'{label}' is already a root ({current[label]})"
+    for other in current.values():  # no nesting: it makes a dir list under two ids
+        if (
+            path == other
+            or path.startswith(other + os.sep)
+            or other.startswith(path + os.sep)
+        ):
+            return "collision", f"overlaps an existing root ({other})"
+    try:
+        existing: list = []
+        with contextlib.suppress(OSError, json.JSONDecodeError):
+            data = json.loads(ROOTS_FILE.read_text())
+            existing = data if isinstance(data, list) else []
+        ROOTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(ROOTS_FILE.parent), prefix="roots.")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump([*existing, path], f)
+            os.replace(tmp, ROOTS_FILE)
+        except OSError as e:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            return "failed", str(e)
+    except (
+        OSError
+    ) as e:  # mkstemp makes 0600 and os.replace preserves it — no chmod needed
+        return "failed", str(e)
+    return "added", None
+
+
 def project_dir(proj: str) -> str:
-    """A project's on-disk root under PARENT — read as cfg.project_dir() at call time,
-    so a test that redirects PARENT reaches every caller (rc_git/rc_desk/rc_sessions)."""
+    """Resolve a project id to its on-disk dir. A "label/name" whose label is an added root
+    resolves under that root; a flat name or a "group/name" (groups are subdirs of PARENT)
+    resolves under PARENT. Read at call time so a test redirecting PARENT/ROOTS_FILE reaches
+    every caller. The name segment is re-validated, so a crafted '..'/absolute part falls
+    back to the PARENT join instead of escaping the resolved root."""
+    label, sep, name = proj.partition("/")
+    if sep and NAME_RE.match(name) and (root := extra_roots().get(label)):
+        return os.path.join(root, name)
     return os.path.join(PARENT, proj)
 
 
@@ -150,6 +288,15 @@ def projects() -> list[str]:
                 ]
         else:
             out.append(e)
+    for label, root in extra_roots().items():
+        with contextlib.suppress(OSError):  # vanished/unreadable root contributes none
+            out += [
+                f"{label}/{s}"
+                for s in os.listdir(root)
+                if NAME_RE.match(s)
+                and os.path.isdir(os.path.join(root, s))
+                and os.path.realpath(os.path.join(root, s)).startswith(root + os.sep)
+            ]
     return sorted(out)
 
 

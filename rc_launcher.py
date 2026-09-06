@@ -26,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlparse
 
 import rc_config as cfg
+import rc_desk
 import rc_sessions
 import rc_share
 
@@ -127,6 +128,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(rc_sessions.status_payload())
             case "/create":
                 return self._create(q.get("proj", [""])[0])
+            case "/addroot":
+                return self._addroot(q.get("path", [""])[0])
             case "/launch" | "/stop":
                 return self._session_verb(u.path, q)
             case path if _is_files(path):
@@ -147,6 +150,19 @@ class Handler(BaseHTTPRequestHandler):
             payload["launch"] = lstatus
             if lreason:
                 payload["launch_reason"] = lreason
+        return self._json(payload)
+
+    def _addroot(self, path: str):
+        """Register a project root at runtime (the '+ root' control), token-gated like every
+        route. The candidate path rides in the query, so a refusal logs only the URL path,
+        never the query — the dir stays out of the log the way the token does."""
+        status, reason = cfg.add_root(path)
+        cfg.log_event("addroot", path.strip() or "-", status)
+        if status == "added":
+            rc_desk.desk_projects.invalidate()  # a new root's desk sessions must badge now
+        payload = {"status": status}
+        if reason:
+            payload["reason"] = reason
         return self._json(payload)
 
     def _session_verb(self, path: str, q: dict):

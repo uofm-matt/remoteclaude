@@ -293,6 +293,13 @@ before you schedule from a stale entry: check the claim still holds, then act.
 
 ## Later — unscheduled
 
+- [ ] **Multiroot availability + desk-cwd realpath (from the 2026-09-06 add-roots work).**
+  `rc_config.extra_roots()` runs on every /status poll with no timeout, so an added root on a
+  mount that dies AFTER add wedges the ThreadingHTTPServer poll thread (same class as the
+  primary `os.listdir(PARENT)`; add-time probes readability once). If it bites, wrap
+  `extra_roots`/`projects` in a short TTL cache like the desk scan. Also: `_desk_scan` compares
+  an lsof/proc cwd to realpath'd roots, so a non-realpath'd macOS cwd (`/tmp` vs `/private/tmp`)
+  can miss its root prefix and drop the desk badge (display-only). (Defect pass + panel, low.)
 - [ ] **Nested-projects follow-ups (Phase 1 landed opt-in 2026-09-06).** Grouped UI section
   headers on the launcher page (per-`group/` sections, not one flat list — the plan's optional
   item 6); and creating a project *into* a group from the phone (`create()` is flat-only today,

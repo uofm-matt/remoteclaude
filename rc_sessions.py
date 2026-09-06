@@ -65,6 +65,7 @@ def status_payload() -> dict:
         "states": session_states(),
         "desk": rc_desk.desk_projects(),
         "git": rc_git.git_states(projs),
+        "roots": cfg.extra_roots(),
     }
 
 
@@ -356,6 +357,10 @@ def create(proj: str) -> tuple[str, str | None]:
     # otherwise spawn an rc-<group> session projects() never lists and /stop can't reach
     if proj in cfg.GROUPS:
         return "badname", f"{proj} is a category"
+    # a root label (even a currently-down root) is not a flat project — don't let create()
+    # mkdir PARENT/<label> and permanently shadow an offline root
+    if proj in cfg.configured_root_labels():
+        return "badname", f"{proj} is a root label"
     path = cfg.project_dir(proj)
     try:
         os.makedirs(path)

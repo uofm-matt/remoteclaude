@@ -182,6 +182,22 @@ class RouteTest(ServerCase):
         joined = [" ".join(map(str, c)) for c in calls]
         self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
 
+    def test_addroot_requires_the_token(self):
+        self.assertEqual(self.req("GET", "/addroot?path=/tmp", cookie=False)[0], 403)
+
+    def test_addroot_adds_a_directory_and_lists_its_children(self):
+        extra = os.path.join(self.aux, "extra")
+        os.makedirs(os.path.join(extra, "sub"))
+        status, _, body = self.req("GET", f"/addroot?path={extra}")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["status"], "added")
+        projs = json.loads(self.req("GET", "/status")[2])["projects"]
+        self.assertIn("extra/sub", projs)  # the new root's child now lists
+        self.assertEqual(
+            json.loads(self.req("GET", "/addroot?path=/no/such")[2])["status"],
+            "badpath",
+        )
+
     def test_version_route_is_unauthenticated_and_returns_the_stamp(self):
         # the watchdog liveness probe hits this with no token; moving it below _authed would
         # 403 and break the probe, so pin that a token-less GET gets 200 + the build stamp

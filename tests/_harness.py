@@ -41,6 +41,7 @@ _ATTRS = {
         "TOKEN",
         "PARENT",
         "CLAUDE_JSON",
+        "ROOTS_FILE",
         "CLAUDE_PROJECTS",
         "RESUME",
         "SPAWN",
@@ -168,6 +169,7 @@ class ServerCase(unittest.TestCase):
     def setUp(self):
         restore_globals(self)
         self.share = rc_config.SHARE = share_dir(self)
+        rc_config.ROOTS_FILE = Path(self.share, "roots.json")
         rc_config.TOKEN = TOKEN
         rc_config.log_event = lambda *a: None  # keep test traffic out of the real log
         self.port = serve(self)
@@ -201,6 +203,7 @@ class MockedToolsCase(unittest.TestCase):
         rc_config.PARENT = os.path.join(self.tmp, "projects")
         os.makedirs(os.path.join(rc_config.PARENT, "proj"))
         rc_config.CLAUDE_JSON = os.path.join(self.tmp, "claude.json")
+        rc_config.ROOTS_FILE = Path(self.tmp, "roots.json")
         Path(rc_config.CLAUDE_JSON).write_text("{}")
         # empty: no desk thread
         rc_config.CLAUDE_PROJECTS = Path(self.tmp, "claude-projects")

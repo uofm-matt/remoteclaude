@@ -3,11 +3,13 @@ boundary that scopes them to one project, the SIGTERM -> wait -> SIGKILL takeove
 TTL cache the 5s status poll leans on. All on canned probe output — no real process is
 ever scanned or signalled."""
 
+import json
 import os
 import signal
 import subprocess
 import time
 import unittest
+from pathlib import Path
 
 import rc_config
 import rc_desk
@@ -90,6 +92,15 @@ class DeskTest(MockedToolsCase):
         }
         self.assertEqual(rc_desk.desk_projects(), ["proj"])
         # second call inside the TTL is served from cache: no new pgrep forked
+
+    def test_desk_projects_maps_added_root_cwd_to_label(self):
+        rc_desk.desk_projects.invalidate()
+        base = os.path.dirname(rc_config.PARENT)
+        media = os.path.realpath(os.path.join(base, "media"))
+        os.makedirs(os.path.join(media, "movie"))
+        Path(rc_config.ROOTS_FILE).write_text(json.dumps([media]))
+        self.desk = {"111": desk(os.path.join(media, "movie"))}
+        self.assertEqual(rc_desk.desk_projects(), ["media/movie"])
 
     def test_desk_projects_maps_grouped_project_to_group_name(self):
         # a desk claude inside a category maps to "group/name" (matching projects()), else the

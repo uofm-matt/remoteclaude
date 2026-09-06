@@ -99,14 +99,18 @@ def _desk_scan() -> list[str]:
     but invisible to the launcher's tmux-based dots. (bridge-pointer.json was rejected
     as the signal: live desk sessions don't reliably write one, and stale ones point
     at dead pids.)"""
-    root = cfg.PARENT + os.sep
-    return sorted(
-        {
-            _rel_project(cwd.removeprefix(root))
-            for _, cwd in _desk_claude_pids()
-            if cwd.startswith(root)
-        }
-    )
+    added = [(rp + os.sep, label) for label, rp in cfg.extra_roots().items()]
+    parent = cfg.PARENT + os.sep
+    out = set()
+    for _, cwd in _desk_claude_pids():
+        for pre, label in added:
+            if cwd.startswith(pre):
+                out.add(f"{label}/{cwd.removeprefix(pre).split(os.sep)[0]}")
+                break
+        else:
+            if cwd.startswith(parent):
+                out.add(_rel_project(cwd.removeprefix(parent)))
+    return sorted(out)
 
 
 # cached so the 5s /status poll doesn't fork pgrep/ps/lsof per viewer per tick;

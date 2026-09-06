@@ -14,6 +14,7 @@ RESUME="${RC_RESUME:-continue}"    # continue | fork | off
 TAKEOVER="${RC_TAKEOVER:-1}"       # 1 = close the project's desktop session first
 SPAWN="${RC_SPAWN:-same-dir}"      # same-dir | worktree | session
 GROUPS="${RC_PROJECT_GROUPS:-}"    # category dirs to descend one level into (e.g. work,hobby)
+ROOTS="${RC_PROJECT_ROOTS:-}"      # additional project roots, comma/colon-separated
 SNAPSHOT="${RC_SNAPSHOT:-}"        # 1 = git-checkpoint the tree before each remote turn
 CLAUDE_BIN="${RC_CLAUDE_BIN:-$HOME/.local/bin/claude}"
 PY="$(command -v python3 || true)"
@@ -97,6 +98,7 @@ install_launchd() {
     <key>RC_TAKEOVER</key><string>${TAKEOVER}</string>
     <key>RC_SPAWN</key><string>${SPAWN}</string>
     <key>RC_PROJECT_GROUPS</key><string>${GROUPS}</string>
+    <key>RC_PROJECT_ROOTS</key><string>${ROOTS}</string>
     <key>RC_SNAPSHOT</key><string>${SNAPSHOT}</string>
   </dict>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
@@ -150,6 +152,7 @@ Environment=RC_RESUME=${RESUME}
 Environment=RC_TAKEOVER=${TAKEOVER}
 Environment=RC_SPAWN=${SPAWN}
 Environment=RC_PROJECT_GROUPS=${GROUPS}
+Environment=RC_PROJECT_ROOTS=${ROOTS}
 Environment=RC_SNAPSHOT=${SNAPSHOT}
 Restart=always
 RestartSec=10

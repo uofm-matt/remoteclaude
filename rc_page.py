@@ -79,7 +79,7 @@ text-align:center}
 </style></head>
 <body>
 <header>
-<div class=htop><h1>Remote Control &middot; __HOST__</h1><span class=hdr><a class=fileslink href="/files">files</a><span id=auth class=auth></span></span></div>
+<div class=htop><h1>Remote Control &middot; __HOST__</h1><span class=hdr><a class=fileslink id=addroot href="#">+ root</a><a class=fileslink href="/files">files</a><span id=auth class=auth></span></span></div>
 <div id=authbar class=authbar></div>
 <div class=qrow><input id=q placeholder="filter projects&hellip;" autocomplete=off
  autocapitalize=off autocorrect=off spellcheck=false autofocus><button id=newbtn
@@ -225,6 +225,12 @@ $('#newbtn').onclick=()=>{
   if(!NAME_RE.test(n)){toast('\\u2717 bad name: start with a letter or digit');return;}
   if(PROJECTS.includes(n)){toast(n+' already exists \\u2014 tap it to start');return;}
   createProj(n);};
+$('#addroot').onclick=async function(e){e.preventDefault();
+  var p=(prompt('Add a project root (absolute path):')||'').trim();if(!p)return;toast('adding\\u2026');
+  try{var r=await fetch('/addroot?path='+encodeURIComponent(p));var j=await r.json();
+    if(j.status!=='added'&&j.status!=='exists'){toast('\\u2717 '+(j.reason||j.status||'add failed'));return;}
+    toast(j.status==='exists'?'already a root':'\\u2713 added, reloading\\u2026');setTimeout(function(){location.reload();},500);
+  }catch(err){toast('add failed');}};
 authBar();render();setInterval(poll,5000);
 if(location.search)history.replaceState({},'',location.pathname);
 __PTR__

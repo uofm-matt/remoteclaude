@@ -22,6 +22,23 @@ Human-facing chronological record; newest first. One entry per change — what a
     ensure_trusted concurrency stress test. Two trailing-comment reflows cleaned.
 ## 2026-09-06
 
+- Multiple project roots + an interface to add them. Beyond the primary `~/projects`, the
+  launcher now serves additional root directories: each root's children list as
+  `<basename>/<name>` (reusing the group/name identity — tmux `+` substitution, desk badge,
+  membership guard all carry over), so projects can live in several locations with no reorg.
+  Roots come from `RC_PROJECT_ROOTS` (env) plus a runtime-editable `~/.config/rc-launcher/
+  roots.json` that a token-gated `GET /addroot` appends to, so a root added from the phone's
+  "+ root" control shows on the next poll with no reload. Designed via an ultracode workflow
+  (model + route/UI + security pre-mortem) and hardened through a defect pass + 3-model panel:
+  JSON persistence (not line-based, so a path can't inject a second root), roots stored
+  realpath'd with symlinked children filtered out (containment like the file share), the name
+  segment re-validated in `project_dir` so a crafted `..`/absolute part can't escape, add-time
+  rejection of `/`/`$HOME`/system-adjacent/PARENT-overlapping/nested roots, `create()` refuses
+  a configured root label (even a currently-down one, so it can't shadow it), and the temp
+  file is unlinked on a write failure. Backward-compat is structural: with no roots configured
+  the primary tree behaves byte-identically. Known limit: `extra_roots()` is uncached on the
+  poll thread, so a mount that dies after being added can wedge polls (the same exposure the
+  primary root already has).
 - Two-level project support (REORG-PLAN Phase 1), opt-in and transition-safe. Set
   `RC_PROJECT_GROUPS` (comma-separated, e.g. `work,hobby`) and any top-level dir with that
   name becomes a category: its children list as `group/name`, while every other dir stays a

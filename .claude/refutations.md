@@ -77,3 +77,13 @@ Written by `refute.py`; the format is parsed, so keep the `- key: value` shape.
 - oracle: grep: running() feeds only status_payload['running'] (rc_sessions.py:63) -> the page RUNNING set for display; it is never passed to project_dir or any path op. Every project_dir caller passes a NAME_RE-validated single segment (create, which also has no '/'), a membership-guarded proj (launch/stop/git/desk via 'proj not in projects()'), or a real os.listdir entry (projects). NAME_RE forbids '+' and '/' in a segment, so no launcher-created session name is ambiguous. A crafted external rc-* session yields only a spurious display badge, never a filesystem op.
 - cost: two greps (running() consumers, project_dir callers)
 - unmeasured: none
+
+## In the multiroot feature: project_dir joins an added root + name with no realpath prefix check so a symlinked child escapes for launch/git; add_root's json.dump without fsync before os.replace risks a torn roots.json; extra_roots rejecting a basename that matches an unrelated PARENT dir is wrong; desk-scan truncating at the first segment after a root collapses distinct nested projects
+
+- scope: `rc_desk.py`
+- verdict: REFUTED
+- measured: 2026-09-06
+- commit: 84d741b22fa237ddad29723b1d2cfeec366a5ca0
+- oracle: project_dir is only reached with a membership-guarded proj (launch/stop guard on 'proj in projects()') or a NAME_RE single segment (create); projects() already filters symlinked children via os.path.realpath(child).startswith(root+os.sep), so a symlink child is never in projects() and never reaches project_dir. os.replace is atomic (no torn file); fsync is durability-only and ensure_trusted sets the no-fsync precedent for this class of config write. The PARENT-basename block is the intended primary-namespace-wins collision rule (avoids an ambiguous label/name). Desk-scan's one-level truncation is correct: a project is one level under a root, so root/proj/sub maps to the proj, exactly as PARENT flat behavior does.
+- cost: reading the membership guards, projects() symlink filter, and os.replace semantics
+- unmeasured: a root on a mount that dies AFTER add is uncached on the /status poll thread (same exposure the primary PARENT os.listdir already has); a desk cwd reported non-realpath'd on macOS could miss its root prefix (display-only)
