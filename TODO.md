@@ -1,7 +1,8 @@
 # TODO
 
 Backlog for remoteclaude, ranked by leverage. Dates are targets, not deadlines.
-Grades 2026-09-05 (@414ee97, audit): architecture A, code A, tests A-, process A (net A-).
+Grades 2026-09-06 (@fb796f9, audit): architecture A, code A, tests A-, process A- (net A-). Process ticked down: this session shipped the reload/version fix + the disk/liveness watchdog but the operator-facing docs and the size_cap enforcement lagged the code.
+Grades 2026-09-05 (@414ee97, superseded): architecture A, code A, tests A-, process A (net A-).
 Grades 2026-09-02 (@3256853, superseded): architecture A-, code A, tests B+, process A- (net A-).
 Grades 2026-08-17 evening (@87c58bf, superseded): architecture A-, code A-, tests A-, process A- (net A-).
 Grades 2026-08-17 morning (@55ab16a, superseded): arch B+, code A-, tests B+, process A- (net B+).
@@ -9,6 +10,20 @@ Grades 2026-08-17 morning (@55ab16a, superseded): arch B+, code A-, tests B+, pr
 When an item is done, **leave it unticked with a `DONE <date>:` note above it** rather than
 deleting it — the original wording records what was wrong, the note records the fix. Verify
 before you schedule from a stale entry: check the claim still holds, then act.
+
+## Now — audit 2026-09-06, target 2026-09-09
+
+- [ ] **The reload fix is undocumented — invisible where it's needed.** RUNBOOK.md (Verify
+  :300, Troubleshooting :310) and README.md (0 mentions) never tell the operator to run
+  `./install.sh --reload` after editing `rc_*.py`, or to `curl :8787/version` to confirm the
+  build went live. The stale-serve footgun this session fixed (install.sh:22-33, /version)
+  is unreachable by a reader hitting it. **Cost of delay: GROWING** — every uninformed
+  edit-and-reload hits the exact wall the fix removes. Doc-only. (~10 lines across two files.)
+- [ ] **RUNBOOK/README describe the watchdog as login-only; it now watches disk + liveness.**
+  RUNBOOK.md:43,:69 and README.md:95 say "runs claude auth status … notifies if the login
+  lapses"; rc_healthcheck also runs `check_disk` (<5 GiB) and `check_launcher` (GET /version).
+  RUNBOOK.md:315 still shows the log as `login=ok …`; it is now `login=ok build=<stamp> …`.
+  Half-true, not inverted — update the three component descriptions and the log sample.
 
 ## Now — audit 2026-09-05, target 2026-09-08
 
@@ -300,6 +315,50 @@ before you schedule from a stale entry: check the claim still holds, then act.
 - [ ] **Refresh docs/launcher.png.** Predates the session icons and desk badges (2026-08-16);
   needs a phone screenshot of the current page dropped into `docs/`. Not doable from a
   session.
+- [ ] **`rc_config.py:82` crashes at import on an empty `RC_LAUNCHER_PORT`.**
+  `int(os.environ.get("RC_LAUNCHER_PORT", "8787"))` → `ValueError` on a set-but-empty env
+  (a plist/unit `Environment=RC_LAUNCHER_PORT=`), before the token check, bare traceback.
+  rc_healthcheck.py:33 already uses the safe `... or "8787"` form; align rc_config. Verified
+  live: `RC_LAUNCHER_PORT="" python3 -c "import rc_config"` raises. 1-char fix, via /gate.
+  (Audit 2026-09-06.)
+- [ ] **`MIN_FREE_GB` (the one number the watchdog enforces) is unpinned.** rc_healthcheck.py:70
+  — `test_check_disk_alerts_below_floor_only` probes 1 GiB and 50 GiB, so any floor in (1,50]
+  passes; `5.0 → 2.0` survives. Add a case straddling 5.0 (4.9 alerts, 5.1 quiet), which also
+  pins the `<` vs `<=` boundary. Cheap; mutation-verified gap. (Audit 2026-09-06.)
+- [ ] **`size_cap` is honor-system and already violated.** `.claude/review.toml:5` declares 350;
+  `rc_sessions.py` is 360 (10 over, from the 2026-09-06 ensure_trusted concurrency fix).
+  Nothing enforces it — no CI step, no test (grep of .github/tests/pyproject → none); the cap
+  only bites when /gate runs on a diff *touching* the file. Architecture verdict is NOT to
+  split (the view/lifecycle halves are the read/write faces of one domain): bump `size_cap`
+  to 375 with a one-line note, and add a CI/test check over `git ls-files '*.py'` so the cap
+  actually bites. (Audit 2026-09-06.)
+- [ ] **`_build_stamp` docstring over-claims "the launcher's own source".** rc_config.py:66 —
+  it hashes all 16 `rc_*.py` but the launcher imports 12, so editing rc_guard/rc_healthcheck/
+  rc_state_hook/rc_status advances `/version` while the running launcher is byte-unchanged.
+  Harmless for reload-verification (you reload after editing any shipped file); reword to
+  "the shipped rc_*.py bundle." Doc-only. (Audit 2026-09-06.)
+- [ ] **Doc module maps omit the JS assets and two leaves.** rc_download.js/rc_upload.js
+  (tracked, node-tested) are in neither README Components (:84-97) nor the RUNBOOK map
+  (:55-69); rc_claude.py/rc_state.py are in the RUNBOOK map but not the README table. Add
+  them. (Audit 2026-09-06.)
+- [ ] **`ensure_trusted` mkstemp/os.replace atomicity is untested.** rc_sessions.py — replacing
+  the unique tempfile with a fixed-name open survives the whole suite; the concurrent-tear
+  property the 2026-09-06 fix defends has no test (the success-path os.replace IS pinned).
+  Genuinely hard without threading two first-time-trust writers; note it or write a threaded
+  test. Low-med. (Audit 2026-09-06.)
+- [ ] **install.sh core is nearly untested.** Only the hook-command single-source is checked
+  (test_hooks.py:115); the plist/unit generation, the settings.json JSON mutation, and
+  `--reload` have no test and there is no shell test harness. install.sh is a high_impact
+  path that mutates ~/.claude/settings.json. Mitigated by idempotency + manual runs. Low.
+  (Audit 2026-09-06.)
+- [ ] **No typecheck gate in CI.** ci.yml runs format/lint(F,E9)/bandit/tests/JS but no
+  ty/mypy/pyright despite PEP-484 hints throughout (`ty check` passes locally). Likely a
+  deliberate stdlib-only choice — either add `uv run ty check` to ci.yml or record the
+  decision not to. Low. (Audit 2026-09-06.)
+- [ ] **install.sh/uninstall.sh still duplicate the settings.json add/remove Python.** The
+  hook-command STRING is single-sourced now (the load-bearing half of the closed TODO:141),
+  but the JSON mutation blocks (install.sh:73-90 vs uninstall.sh:36-53) remain two copies.
+  Residual; low. (Audit 2026-09-06.)
 > **DONE 2026-09-05** — test_orchestration gains a marker-TRAILING case and a `credential` case; both mutants (filter deletion, keyword) killed.
 
 - [ ] **`death_reason()`'s "Pane is dead" filter is unpinned.** `rc_sessions.py` `death_reason`,
