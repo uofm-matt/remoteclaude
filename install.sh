@@ -19,6 +19,19 @@ PY="$(command -v python3 || true)"
 TMUX_BIN="${RC_TMUX_BIN:-$(command -v tmux || true)}"
 NOTIFY_URL="${RC_NOTIFY_URL:-}"
 
+# --reload: pick up edited rc_*.py by restarting ONLY the launcher service — no bootout/
+# bootstrap, no plist/unit rewrite. Confirm the new code is live via the unauthenticated
+# /version (its stamp is a hash of the rc_*.py, so it advances when the source does).
+if [ "${1:-}" = "--reload" ]; then
+  case "$OS" in
+    Darwin) launchctl kickstart -k "gui/$(id -u)/com.matt.rc-launcher" || { echo "!! kickstart failed"; exit 1; } ;;
+    Linux)  systemctl --user restart rc-launcher.service || { echo "!! restart failed"; exit 1; } ;;
+    *) echo "!! unsupported OS for --reload: $OS"; exit 1 ;;
+  esac
+  echo "==> reloaded; curl -s localhost:${PORT}/version to confirm the new build stamp"
+  exit 0
+fi
+
 echo "==> rc-launcher install (repo: $REPO, os: $OS)"
 
 # 1. python3 + tmux (tmux holds each session so it survives the request returning)
@@ -122,6 +135,8 @@ EOF
     <key>HOME</key><string>${HOME}</string>
     <key>RC_CLAUDE_BIN</key><string>${CLAUDE_BIN}</string>
     <key>RC_NOTIFY_URL</key><string>${NOTIFY_URL}</string>
+    <key>RC_LAUNCHER_PORT</key><string>${PORT}</string>
+    <key>RC_SHARE_DIR</key><string>${SHARE_DIR}</string>
   </dict>
   <key>RunAtLoad</key><true/><key>StartInterval</key><integer>1800</integer>
   <key>StandardOutPath</key><string>/tmp/rc-healthcheck.log</string>
@@ -166,6 +181,8 @@ Type=oneshot
 ExecStart=${PY} ${REPO}/rc_healthcheck.py
 Environment=RC_CLAUDE_BIN=${CLAUDE_BIN}
 Environment=RC_NOTIFY_URL=${NOTIFY_URL}
+Environment=RC_LAUNCHER_PORT=${PORT}
+Environment=RC_SHARE_DIR=${SHARE_DIR}
 EOF
   cat > "$U/rc-healthcheck.timer" <<EOF
 [Unit]

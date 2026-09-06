@@ -16,6 +16,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from types import MappingProxyType
@@ -112,9 +113,21 @@ def ensure_trusted(proj: str) -> None:
     entry.setdefault("allowedTools", [])
     entry.setdefault("mcpServers", {})
     entry["hasTrustDialogAccepted"] = True
-    tmp = cfg.CLAUDE_JSON + ".rctmp"
-    Path(tmp).write_text(json.dumps(d, indent=2))
-    os.replace(tmp, cfg.CLAUDE_JSON)
+    # a UNIQUE temp in the same dir: two concurrent first-time-trust launches through a
+    # shared temp name could tear ~/.claude.json (and 500 the loser on a vanished temp).
+    fd, tmp = tempfile.mkstemp(
+        dir=os.path.dirname(cfg.CLAUDE_JSON), prefix=".claude.json.rc"
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(d, f, indent=2)
+        os.replace(tmp, cfg.CLAUDE_JSON)
+    except (
+        OSError
+    ) as e:  # disk full / unwritable: log and continue, don't 500 or orphan a temp
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        cfg.log_event("trust", proj, f"skip write: {e}")
 
 
 def fresh_cmd(proj: str) -> list[str]:

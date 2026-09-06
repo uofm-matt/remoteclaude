@@ -182,6 +182,13 @@ class RouteTest(ServerCase):
         joined = [" ".join(map(str, c)) for c in calls]
         self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
 
+    def test_version_route_is_unauthenticated_and_returns_the_stamp(self):
+        # the watchdog liveness probe hits this with no token; moving it below _authed would
+        # 403 and break the probe, so pin that a token-less GET gets 200 + the build stamp
+        status, _, body = self.req("GET", "/version", cookie=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["version"], rc_config.VERSION)
+
     def test_stop_route_reports_failed_when_the_session_survives(self):
         # the contract stopSess keys on: a session still alive after the double C-c
         # and the kill is "failed" with a reason, so the page keeps the dot and toasts

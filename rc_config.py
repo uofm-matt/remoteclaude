@@ -14,6 +14,7 @@ server checks for the token at startup.
 
 import contextlib
 import functools
+import hashlib
 import os
 import re
 import socket
@@ -60,6 +61,24 @@ HOST = socket.gethostname().split(".")[0]
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")
 # per-project transcripts
 CLAUDE_PROJECTS = Path(os.path.expanduser("~/.claude/projects"))
+
+
+def _build_stamp(root: Path = Path(__file__).parent) -> str:
+    """A 12-hex hash over every rc_*.py beside this file: it changes iff the launcher's own
+    source changes, needs no git and no build step, and is recomputed at import — so it
+    advances exactly when a reload re-execs the process. Blank when no source is readable,
+    so /version answers instead of crashing."""
+    h = hashlib.sha256()
+    try:
+        sources = sorted(root.glob("rc_*.py"))
+        for p in sources:
+            h.update(p.read_bytes())
+    except OSError:
+        return ""  # a partial hash would read as a legitimate build — blank is honest
+    return h.hexdigest()[:12] if sources else ""
+
+
+VERSION = _build_stamp()
 SHARE = os.path.realpath(
     os.path.expanduser(os.environ.get("RC_SHARE_DIR", "~/rc-share"))
 )

@@ -2,6 +2,7 @@
 (reads them for the shell prompt / --list) — importable now that both are behind a __name__
 guard. STATE_DIR is redirected to a tmp dir and restored per test."""
 
+import http.client
 import io
 import json
 import shutil
@@ -237,7 +238,16 @@ class HealthcheckTest(unittest.TestCase):
         self.assertIn("http://ntfy.example/rc", pushed)
 
     def test_main_notifies_only_on_login_problem(self):
-        keep(self, (rc_healthcheck, "notify"))
+        # isolate the login path from the disk/liveness probes main() now also runs, so this
+        # test asserts only the auth notification it names (else it hits real disk + network)
+        keep(
+            self,
+            (rc_healthcheck, "notify"),
+            (rc_healthcheck, "check_disk"),
+            (rc_healthcheck, "check_launcher"),
+        )
+        rc_healthcheck.check_disk = lambda: None
+        rc_healthcheck.check_launcher = lambda: "testbuild"
         notes = []
         rc_healthcheck.notify = lambda title, msg: notes.append((title, msg))
         self._claude('{"loggedIn": false}')  # logged out -> alert
@@ -249,6 +259,87 @@ class HealthcheckTest(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             rc_healthcheck.main()
         self.assertEqual(len(notes), 1)  # no new notification on the healthy run
+
+    def test_check_disk_alerts_below_floor_only(self):
+        from types import SimpleNamespace
+
+        keep(self, (rc_healthcheck, "notify"), (rc_healthcheck.os, "statvfs"))
+        notes = []
+        rc_healthcheck.notify = lambda t, m: notes.append((t, m))
+        # f_bavail * f_frsize / 1024**3 GiB free; MIN_FREE_GB is 5.0
+        rc_healthcheck.os.statvfs = lambda p: SimpleNamespace(
+            f_frsize=1, f_bavail=1 * 1024**3
+        )
+        rc_healthcheck.check_disk()
+        self.assertTrue(notes)  # 1 GiB < 5 GiB floor -> alert (per probed path)
+        notes.clear()
+        rc_healthcheck.os.statvfs = lambda p: SimpleNamespace(
+            f_frsize=1, f_bavail=50 * 1024**3
+        )
+        rc_healthcheck.check_disk()
+        self.assertFalse(notes)  # 50 GiB free -> quiet
+
+    def test_check_launcher_returns_version_up_and_alerts_down(self):
+        keep(self, (rc_healthcheck, "notify"), (rc_healthcheck, "_open"))
+        notes = []
+        rc_healthcheck.notify = lambda t, m: notes.append((t, m))
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b'{"version": "abc123def456"}'
+
+        rc_healthcheck._open = lambda url, timeout=None: _Resp()
+        self.assertEqual(rc_healthcheck.check_launcher(), "abc123def456")
+        self.assertFalse(notes)  # 200 -> quiet, returns the stamp
+
+        def _boom(url, timeout=None):
+            raise OSError("connection refused")
+
+        rc_healthcheck._open = _boom
+        self.assertEqual(rc_healthcheck.check_launcher(), "")  # unreachable -> blank
+        self.assertTrue(notes)  # ...and a not-responding alert
+
+        def _truncated(url, timeout=None):
+            raise http.client.IncompleteRead(
+                b"partial"
+            )  # wedged: malformed HTTP, not OSError
+
+        notes.clear()
+        rc_healthcheck._open = _truncated
+        self.assertEqual(
+            rc_healthcheck.check_launcher(), ""
+        )  # HTTPException caught, no crash
+        self.assertTrue(notes)
+
+        # a wrong service on the port answers 200 with non-dict JSON: must not crash
+        class _Bad(_Resp):
+            def read(self):
+                return b"null"
+
+        notes.clear()
+        rc_healthcheck._open = lambda url, timeout=None: _Bad()
+        self.assertEqual(rc_healthcheck.check_launcher(), "")  # no AttributeError
+        self.assertTrue(notes)  # unexpected response is a liveness alert
+
+    def test_check_disk_survives_a_missing_path(self):
+        keep(self, (rc_healthcheck, "notify"), (rc_healthcheck.os, "statvfs"))
+        notes = []
+        rc_healthcheck.notify = lambda t, m: notes.append((t, m))
+
+        def _missing(p):
+            raise OSError("no such path")
+
+        rc_healthcheck.os.statvfs = _missing
+        rc_healthcheck.check_disk()  # must not raise
+        self.assertFalse(
+            notes
+        )  # a probe path that can't be stat'd is skipped, not alerted
 
 
 if __name__ == "__main__":

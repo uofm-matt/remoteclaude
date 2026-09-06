@@ -47,3 +47,13 @@ Written by `refute.py`; the format is parsed, so keep the `- key: value` shape.
 - oracle: tests/_harness.py _STDLIB lists (time,'time'), (os.path,'islink'), (os,'readlink'); ran tests.test_desk in a fresh interpreter and compared identities before/after: all three restored (True, True, True), islink('/proc/777/cwd') False after the suite; a keep()-as-no-op mutant is killed by two suite failures, so the restores are observed, not decorative
 - cost: one subprocess run
 - unmeasured: a cleanup registered after restore_globals() in setUp still runs while patches are live (LIFO); documented in the restore_globals docstring, not guarded
+
+## check_launcher's except (OSError,...) misses urllib HTTPError on a non-2xx /version, and install.sh --reload runs before PORT is initialized so ${PORT} expands empty
+
+- scope: `install.sh`
+- verdict: REFUTED
+- measured: 2026-09-06
+- commit: 43fbada91e382ca99f32b76aa422f7b049c1acf3
+- oracle: urllib.error.HTTPError subclasses URLError subclasses OSError, so a non-2xx is caught (verified in the class hierarchy); install.sh defines PORT at line 10 and the --reload block is inserted after line 20, so PORT is always set first (read the file)
+- cost: reading the exception hierarchy and the install.sh line order
+- unmeasured: none

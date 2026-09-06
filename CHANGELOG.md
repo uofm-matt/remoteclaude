@@ -2,6 +2,28 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+## 2026-09-06
+
+- Operational trio + a concurrency fix (from the 2026-09-06 improvement analysis).
+  - **Healthcheck now watches more than login.** rc_healthcheck gained `check_disk` (statvfs
+    on / and the share, alert < 5 GiB — the failure that silently downed the launcher) and
+    `check_launcher` (GET the new unauthenticated /version; alert if the launcher is wedged
+    or crash-looping, which the login probe can't see). It reads PORT/SHARE from env, still
+    importing only rc_claude so it stays independent of the launcher tree.
+  - **A verifiable reload.** `install.sh --reload` restarts only the launcher service (no
+    reinstall), and a new unauthenticated `/version` returns a 12-hex hash of the shipped
+    rc_*.py (`rc_config.VERSION`), so `curl localhost:8787/version` confirms edited code went
+    live — a week of commits had served stale until a manual kickstart. Verified end to end:
+    edit -> reload -> the stamp advances.
+  - **Concurrency fix.** ensure_trusted wrote ~/.claude.json through a FIXED temp name, so two
+    concurrent first-time-trust launches of different projects could tear claude's own global
+    config and 500 the loser. Now a unique tempfile.mkstemp + os.replace; a write failure
+    (disk full) logs and continues instead of 500-ing or orphaning the temp.
+  - Gate (defect pass + 3-model panel): check_launcher also catches http.client.HTTPException
+    (a truncated/malformed reply) and non-dict JSON; the liveness probe opens past HTTP_PROXY
+    so a corporate proxy can't false-alarm; empty RC_LAUNCHER_PORT no longer ValueErrors at
+    import; --reload reports a failed restart. All fixes mutation-pinned.
+
 ## 2026-09-05
 
 - Worked the 2026-09-05 audit backlog (the actionable items; launcher screenshot excepted).

@@ -114,6 +114,10 @@ class Handler(BaseHTTPRequestHandler):
         self._guard_body()
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/version":  # unauthenticated: leaks only a source hash, doubles
+            return self._json(
+                {"version": cfg.VERSION}
+            )  # as the watchdog liveness probe
         if not self._authed(q):
             return self._send(403, b"forbidden")
         match u.path:

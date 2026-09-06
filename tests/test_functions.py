@@ -216,6 +216,44 @@ class FunctionTest(unittest.TestCase):
         self.assertEqual(f(), "B")  # and B is now cached
         self.assertEqual(len(f._inflight), 0)  # every key's lock pruned after its fill
 
+    def test_build_stamp_hashes_rc_sources_and_survives_an_empty_dir(self):
+        d = Path(self.tmp, "src")
+        d.mkdir()
+        (d / "rc_a.py").write_text("a = 1\n")
+        (d / "rc_b.py").write_text("b = 2\n")
+        (d / "notes.txt").write_text("ignored\n")  # only rc_*.py counts
+        stamp = rc_config._build_stamp(d)
+        self.assertEqual(len(stamp), 12)  # kills the [:12] -> [:8] mutant
+        (d / "rc_a.py").write_text("a = 999\n")  # source changed
+        self.assertNotEqual(rc_config._build_stamp(d), stamp)  # ...so the stamp changed
+        self.assertEqual(
+            rc_config._build_stamp(Path(self.tmp, "empty")), ""
+        )  # no rc_*.py
+        (
+            d / "rc_bad.py"
+        ).mkdir()  # an rc_*.py that can't be read as bytes (a dir) -> OSError
+        self.assertEqual(
+            rc_config._build_stamp(d), ""
+        )  # fail closed, not a partial hash
+
+    def test_ensure_trusted_write_failure_logs_and_leaves_no_temp(self):
+        # disk-full / unwritable: the launch must not 500 and no orphan temp may accumulate
+        d = Path(rc_config.CLAUDE_JSON).parent
+        os.makedirs(os.path.join(rc_config.PARENT, "p"))
+        Path(rc_config.CLAUDE_JSON).write_text("{}")  # p untrusted -> reaches the write
+
+        def _boom(*a, **k):
+            raise OSError("No space left on device")
+
+        real_dump = rc_sessions.json.dump
+        rc_sessions.json.dump = _boom
+        self.addCleanup(setattr, rc_sessions.json, "dump", real_dump)
+        rc_sessions.ensure_trusted("p")  # must not raise
+        self.assertEqual(Path(rc_config.CLAUDE_JSON).read_text(), "{}")  # untouched
+        self.assertEqual(
+            [f for f in os.listdir(d) if f.startswith(".claude.json.rc")], []
+        )  # temp unlinked on failure
+
     def test_git_ttl_default_is_thirty_seconds(self):
         # raised 15 -> 30 on 2026-09-04 when /status started driving it; pinned so a
         # silent revert (or a silent bump) shows up here
