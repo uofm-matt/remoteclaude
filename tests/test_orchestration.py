@@ -95,9 +95,53 @@ class OrchestrationTest(MockedToolsCase):
         # would mean full-file slurps per tap again
         self.assertFalse(rc_sessions.has_desk_thread("proj"))
 
-    def test_launch_already_running(self):
-        self.responses = {"has-session": proc(returncode=0)}
-        self.assertEqual(rc_sessions.launch("proj"), ("already", None))
+    def test_launch_takes_over_a_running_session(self):
+        # A live rc- session is no longer a no-op "already": launch reaps it (graceful
+        # stop) and starts one fresh client, so a phone relaunch always lands a single
+        # clean session over whatever the computer had open.
+        rc_config.RESUME, rc_config.STOP_WAIT = "off", 0
+        seq = iter([True, False, False, False])  # alive at entry, gone by graceful_stop
+        self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
+        rc_tmux.has_session = lambda s: next(seq, False)
+        self.responses = {"pane_dead": proc(stdout="0\n")}
+        events = []
+        rc_config.log_event = lambda *a: events.append(a)
+        self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
+        # it Ctrl-C'd the prior session (took over) rather than short-circuiting
+        self.assertTrue(any("send-keys" in c and "C-c" in c for c in self._cmds()))
+        self.assertIn("takeover", [e[0] for e in events])
+
+    def test_launch_bails_when_new_session_name_collides(self):
+        # Concurrency guard: two /launch on one proj both reap and both reach _spawn. If
+        # new-session fails because a racing takeover already holds the name, _spawn must
+        # NOT inspect the pre-existing (alive) session and report it "launched" — the
+        # phantom that the removed "already" no-op used to make impossible.
+        rc_config.RESUME, rc_config.STOP_WAIT = "off", 0
+        seq = iter([True, False, False, False])  # alive at entry, gone by graceful_stop
+        self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
+        rc_tmux.has_session = lambda s: next(seq, False)
+        # new-session collides; the pre-existing session is alive (pane not dead) — so the
+        # old code would have sailed through to a phantom ("launched", None)
+        self.responses = {
+            "new-session": proc(returncode=1),
+            "pane_dead": proc(stdout="0\n"),
+        }
+        status, reason = rc_sessions.launch("proj")
+        self.assertEqual(status, "failed")
+        self.assertIn("new-session", reason)
+        # never touched the session it did not create
+        self.assertFalse(any("remain-on-exit" in c for c in self._cmds()))
+
+    def test_launch_fails_loudly_when_prior_session_wont_die(self):
+        # A prior session that survives SIGINT and kill-session can't be taken over —
+        # the new session would collide on its name — so launch fails loudly instead of
+        # silently attaching to (and reporting "launched" over) the old one.
+        rc_config.STOP_WAIT = 0
+        self.responses = {"has-session": proc(returncode=0)}  # never dies
+        status, reason = rc_sessions.launch("proj")
+        self.assertEqual(status, "failed")
+        self.assertIn("would not stop", reason)
+        self.assertFalse(any("new-session" in c for c in self._cmds()))
 
     def test_launch_fresh_success(self):
         # fresh path, no takeover
@@ -192,11 +236,7 @@ class OrchestrationTest(MockedToolsCase):
         self.assertTrue(any("kill-session" in c for c in self._cmds()))
 
     def test_launch_resume_falls_back_to_fresh(self):
-        rc_config.RESUME, rc_config.SPAWN, rc_config.TAKEOVER = (
-            "continue",
-            "same-dir",
-            False,
-        )
+        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
         # a cli thread exists, so the resume path genuinely runs
         self._seed_desk_thread("proj")
         panes = iter(["1\n", "0\n"])  # resume _spawn dies, fresh _spawn lives
@@ -227,11 +267,7 @@ class OrchestrationTest(MockedToolsCase):
         # Brand-new or phone-born (relay-only) project: no cli transcript exists, so launch()
         # must go STRAIGHT to the fresh flag form — one spawn, no doomed --continue attempt
         # (whose late death used to read as a phantom "launched" and evaporate).
-        rc_config.RESUME, rc_config.SPAWN, rc_config.TAKEOVER = (
-            "continue",
-            "same-dir",
-            False,
-        )
+        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
         self.responses = spawn_ok()
         self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
         spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
@@ -276,13 +312,9 @@ class OrchestrationTest(MockedToolsCase):
 
     def test_tmux_targets_are_exact_match(self):
         # A bare -t prefix-matches: with rc-proj absent and rc-proj-sub live, stop()
-        # would C-c the SIBLING's session and launch() report "already" (verified
+        # would C-c the SIBLING's session and launch() reap it as a takeover (verified
         # against a live tmux). Every -t target must be the exact-match `=name` form.
-        rc_config.RESUME, rc_config.SPAWN, rc_config.TAKEOVER = (
-            "continue",
-            "same-dir",
-            False,
-        )
+        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
         self.responses = spawn_ok()
         rc_sessions.launch("proj")
         rc_sessions.stop("proj")
@@ -320,24 +352,8 @@ class OrchestrationTest(MockedToolsCase):
         subprocess.run = boom
         self.assertEqual(rc_tmux.running(), set())
 
-    def test_resume_with_takeover_off_leaves_desk_sessions_alone(self):
-        rc_config.RESUME, rc_config.SPAWN, rc_config.TAKEOVER = (
-            "continue",
-            "same-dir",
-            False,
-        )
-        self._seed_desk_thread("proj")
-        self.desk = {"777": desk(os.path.join(rc_config.PARENT, "proj"))}
-        self.responses = spawn_ok()
-        self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
-        self.assertEqual(self.killed, [])  # RC_TAKEOVER=0 was mutation-deletable
-
     def test_launch_logs_snapshot_and_takeover(self):
-        rc_config.RESUME, rc_config.SPAWN, rc_config.TAKEOVER = (
-            "continue",
-            "same-dir",
-            True,
-        )
+        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
         # takeover only guards a real resume; needs a cli thread
         self._seed_desk_thread("proj")
         env(self, RC_SNAPSHOT="1", RC_STATE_DIR="/tmp/st")
@@ -355,6 +371,9 @@ class OrchestrationTest(MockedToolsCase):
         kinds = [e[0] for e in events]
         self.assertIn("snap", kinds)
         self.assertIn("takeover", kinds)
+        # takeover is unconditional now: the desk claude was actually signalled, not
+        # merely logged (a bare log line would survive deleting the os.kill)
+        self.assertTrue(any(pid == 111 for pid, _ in self.killed))
 
 
 if __name__ == "__main__":

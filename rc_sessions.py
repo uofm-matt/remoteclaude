@@ -230,9 +230,8 @@ def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
     dies within ~2s on any startup error — untrusted dir, expired login, or
     nothing to --continue — taking its tmux session with it; remain-on-exit
     holds the dead pane so death_reason can read WHY."""
-    # the one tmux call that is NOT rc_tmux.tmux(): that captures output, and a
-    # new-session failure must reach the launcher's log, not be swallowed
-    subprocess.run(
+    # raw subprocess.run so new-session stderr hits the log; nonzero = name taken, bail
+    if subprocess.run(
         [
             rc_tmux.TMUX,
             "new-session",
@@ -245,7 +244,8 @@ def _spawn(sess: str, proj: str, cmd: list[str], env_opts: list[str]) -> str:
             " ".join(cmd),
         ],
         check=False,
-    )
+    ).returncode:
+        return "tmux new-session failed"
     rc_tmux.tmux("set-option", "-t", f"={sess}", "remain-on-exit", "on")
     time.sleep(3)
     dead = rc_tmux.tmux(
@@ -287,31 +287,31 @@ def _session_env(sess: str, proj: str) -> list[str]:
 
 
 def launch(proj: str) -> tuple[str, str | None]:
+    """Take over and launch: reap this launcher's own live rc- session for proj, and —
+    when resuming, so the phone would be a second client on that thread — any desktop
+    claude rooted in it, then start one fresh remote session. So a launch lands one clean
+    client, never a no-op or a racing client. A prior rc- session that won't die fails
+    loudly (its name can't be reused); a phone/relay client can't be evicted headlessly."""
     sess = rc_tmux.session_name(proj)
     if rc_tmux.has_session(sess):
-        return "already", None
+        if not rc_tmux.graceful_stop(sess, wait=cfg.STOP_WAIT):
+            return "failed", "prior session would not stop for takeover"
+        cfg.log_event("takeover", proj, f"reaped {sess}")
     ensure_trusted(proj)
     if snap := rc_git.snapshot(proj):
         cfg.log_event("snap", proj, snap)
     env_opts = _session_env(sess, proj)
     cmd, resuming = launch_cmd(proj)
     if resuming and not has_desk_thread(proj):
-        # Brand-new or phone-born (relay-only history): nothing to --continue. Go
-        # straight to the fresh flag-form launch instead of paying the 3s stall and
-        # racing the aliveness window on an attempt that can only die.
+        # brand-new/phone-born: no --continue thread, so skip the doomed resume attempt
         cfg.log_event("resume", proj, "no desk thread; fresh launch")
         cmd, resuming = fresh_cmd(proj), False
-    # Resume reopens the project's last thread, so the phone would be a second
-    # client on it. Hand the project off first: close any live desktop (non-RC)
-    # claude rooted inside it, letting it flush its transcript, then launch.
-    if resuming and cfg.TAKEOVER and (killed := rc_desk.takeover(proj)):
+    # hand the thread off from the desk: close any desktop claude on it first
+    if resuming and (killed := rc_desk.takeover(proj)):
         cfg.log_event("takeover", proj, ",".join(map(str, killed)))
     reason = _spawn(sess, proj, cmd, env_opts)
-    # A brand-new / never-used project has no thread to --continue; the resume
-    # form exits 1. Fall back to a plain fresh launch so create-and-start works.
-    # Log the REAL death reason — this also fires on login-expiry etc., and a
-    # hardcoded "no history" mislabeled those in the audit trail.
     if reason and resuming:
+        # resume exits 1 with no thread; fall back to fresh, logging the real death reason
         cfg.log_event("resume", proj, f"fresh relaunch after: {reason}")
         reason = _spawn(sess, proj, fresh_cmd(proj), env_opts)
     return ("failed", reason) if reason else ("launched", None)

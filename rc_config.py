@@ -68,7 +68,6 @@ PORT = int(
 BIND = os.environ.get("RC_LAUNCHER_BIND", "0.0.0.0")
 SPAWN = os.environ.get("RC_SPAWN", "same-dir")  # same-dir | worktree | session
 RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
-TAKEOVER = os.environ.get("RC_TAKEOVER", "1") not in ("0", "off", "")
 HOST = socket.gethostname().split(".")[0]
 CLAUDE_JSON = os.path.expanduser("~/.claude.json")
 # per-project transcripts

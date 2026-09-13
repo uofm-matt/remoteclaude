@@ -45,7 +45,6 @@ _ATTRS = {
         "CLAUDE_PROJECTS",
         "RESUME",
         "SPAWN",
-        "TAKEOVER",
         "GIT",
         "GIT_TTL",
         "DESK_TTL",

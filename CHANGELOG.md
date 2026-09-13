@@ -2,6 +2,18 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-13: `/launch` now always takes over. A live `rc-<proj>` session is no longer a
+  no-op "already" — launch reaps it (graceful stop) and any desktop claude rooted in the
+  project, then starts one fresh remote session, so relaunching from the phone lands a single
+  clean client instead of doing nothing or racing a second client onto the same thread. Matt
+  hit this: a launcher/API-started session plus a hand-started `claude --continue` in the same
+  dir left two clients colliding, and a phone relaunch just returned "already". The `RC_TAKEOVER`
+  opt-out is removed (Matt never used the "leave it running" behavior and wanted no switch);
+  takeover is unconditional. A prior session that survives SIGINT and kill-session now fails
+  loudly ("prior session would not stop for takeover") rather than silently attaching to and
+  reporting "launched" over the old one. Limit unchanged: a pure phone/relay session with no
+  local process can't be evicted — the `claude` CLI has no non-interactive takeover flag.
+
 - 2026-09-13: `stop()` returns "idle" (not "stopped") when no `rc-<proj>` session exists, so a
   wrong or unmanaged proj no longer reads as a successful kill — flagged by the home-ops
   session after `/stop` on a non-launcher session returned `{"status":"stopped"}` though
