@@ -321,8 +321,12 @@ def stop(proj: str) -> tuple[str, str | None]:
     """Close proj's rc session and say whether it is actually gone. graceful_stop()
     SIGINTs first so claude deregisters from the relay, kills only as the fallback,
     then confirms — so the ✕ can no longer report "stopped" over a session that lives
-    (that was the phantom-stop the 2026-09-02 audit named)."""
+    (the phantom-stop the 2026-09-02 audit named), and "idle" when none existed."""
     sess = rc_tmux.session_name(proj)
+    if not rc_tmux.has_session(
+        sess
+    ):  # nothing under that name — a wrong/unmanaged proj
+        return "idle", None
     if rc_tmux.graceful_stop(sess, wait=cfg.STOP_WAIT):
         return "stopped", None
     return "failed", "still alive after SIGINT and kill-session"

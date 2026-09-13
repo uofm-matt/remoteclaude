@@ -2,6 +2,17 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-13: `stop()` returns "idle" (not "stopped") when no `rc-<proj>` session exists, so a
+  wrong or unmanaged proj no longer reads as a successful kill — flagged by the home-ops
+  session after `/stop` on a non-launcher session returned `{"status":"stopped"}` though
+  nothing was killed. Mirrors `desk_stop`'s idle/stopped vocabulary; the page already renders
+  "idle" as "was already closed". "stopped" is now only a confirmed kill of a live session.
+
+- 2026-09-12: README "File share" now states the share is read-write and that secrets must
+  never be left in it — because a global CLAUDE.md audit (home-ops) found this repo's docs were
+  the only place the writable fact was missing, and the global file had once been condensed to
+  "read-only" for lack of a second source. Edited from the home-ops session.
+
 - Paid down the 2026-09-06 audit (all nine findings).
   - **Docs caught up to the trio.** RUNBOOK Verify/Troubleshooting now cover `install.sh
     --reload` + `curl :8787/version` (the stale-serve fix was undocumented); the watchdog is

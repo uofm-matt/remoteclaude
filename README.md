@@ -57,7 +57,8 @@ fresh one — instead of dying on the thread the phone session is holding.
 Tell a session to drop a file in `~/rc-share` and grab it from your phone: the launcher
 serves that one directory at `/files` — browse, download, and upload, each with a live
 status line and a confirmation when it lands (same token gate,
-`realpath`-confined, never your other projects). Copy files in rather than symlinking them — a symlink into a
+`realpath`-confined, never your other projects). The share is read-write, not read-only: a
+token holder can upload and replace files, so never leave secrets in it. Copy files in rather than symlinking them — a symlink into a
 project resolves outside the share and is refused over HTTP by design. For a real drive
 letter on a Windows machine, share `~/rc-share` over macOS SMB and `net use` it (by IP)
 over the same subnet route. See [RUNBOOK.md](RUNBOOK.md).

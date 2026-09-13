@@ -254,10 +254,24 @@ class OrchestrationTest(MockedToolsCase):
         self.assertEqual(len(presses), 2)
         self.assertLess(presses[-1], kill)
 
-    def test_stop_reports_stopped_only_when_gone(self):
-        # dies on SIGINT: no kill-session needed, and "stopped" is a confirmed fact
+    def test_stop_idle_when_no_session_exists(self):
+        # a wrong/unmanaged proj (no rc-<proj> session) must read "idle", not "stopped" —
+        # and stop() must not even send C-c or kill at a session that was never there
         self.responses = {"has-session": proc(returncode=1)}
+        self.assertEqual(rc_sessions.stop("proj"), ("idle", None))
+        self.assertFalse(
+            any("send-keys" in c or "kill-session" in c for c in self._cmds())
+        )
+
+    def test_stop_reports_stopped_when_a_live_session_dies(self):
+        # exists at entry, gone after the C-c: "stopped" is a confirmed kill, no fallback needed
+        seq = iter(
+            [True, False, False, False]
+        )  # entry True, then gone for graceful_stop
+        self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
+        rc_tmux.has_session = lambda s: next(seq, False)
         self.assertEqual(rc_sessions.stop("proj"), ("stopped", None))
+        self.assertTrue(any("send-keys" in c and "C-c" in c for c in self._cmds()))
         self.assertFalse(any("kill-session" in c for c in self._cmds()))
 
     def test_tmux_targets_are_exact_match(self):

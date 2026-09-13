@@ -16,6 +16,7 @@ from pathlib import Path
 import rc_config
 import rc_sessions
 import rc_share
+import rc_tmux
 import rc_templates
 
 from tests._harness import (
@@ -152,6 +153,10 @@ class RouteTest(ServerCase):
         self.assertEqual(
             json.loads(self.get("/launch?proj=realp&json=1")[1])["status"], "launched"
         )
+        # model a live session that dies on the C-c, so /stop reports a real kill
+        seq = iter([True, False, False, False])
+        self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
+        rc_tmux.has_session = lambda s: next(seq, False)
         self.assertEqual(
             json.loads(self.get("/stop?proj=realp&json=1")[1])["status"], "stopped"
         )
