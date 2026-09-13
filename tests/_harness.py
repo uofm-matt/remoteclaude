@@ -25,6 +25,7 @@ from types import SimpleNamespace
 import rc_config
 import rc_desk
 import rc_git
+import rc_settings
 import rc_launcher
 import rc_sessions
 from pathlib import Path
@@ -43,14 +44,13 @@ _ATTRS = {
         "CLAUDE_JSON",
         "ROOTS_FILE",
         "CLAUDE_PROJECTS",
-        "RESUME",
-        "SPAWN",
         "GIT",
         "GIT_TTL",
         "DESK_TTL",
         "log_event",
     ),
     rc_sessions: ("STATE_DIR",),
+    rc_settings: ("RESUME", "SPAWN", "SETTINGS_FILE"),
 }
 # Stdlib singletons the subprocess-mock rebinds. These are the very module objects every
 # rc_* module imported, so one patch here reaches all of them at once.
@@ -169,6 +169,7 @@ class ServerCase(unittest.TestCase):
         restore_globals(self)
         self.share = rc_config.SHARE = share_dir(self)
         rc_config.ROOTS_FILE = Path(self.share, "roots.json")
+        rc_settings.SETTINGS_FILE = Path(self.share, "settings.json")
         rc_config.TOKEN = TOKEN
         rc_config.log_event = lambda *a: None  # keep test traffic out of the real log
         self.port = serve(self)
@@ -203,6 +204,7 @@ class MockedToolsCase(unittest.TestCase):
         os.makedirs(os.path.join(rc_config.PARENT, "proj"))
         rc_config.CLAUDE_JSON = os.path.join(self.tmp, "claude.json")
         rc_config.ROOTS_FILE = Path(self.tmp, "roots.json")
+        rc_settings.SETTINGS_FILE = Path(self.tmp, "settings.json")
         Path(rc_config.CLAUDE_JSON).write_text("{}")
         # empty: no desk thread
         rc_config.CLAUDE_PROJECTS = Path(self.tmp, "claude-projects")

@@ -1,12 +1,14 @@
-"""The 350->375 module-size cap, enforced in a TRACKED test because .claude/review.toml
+"""The 350->375->400 module-size cap, enforced in a TRACKED test because .claude/review.toml
 (where /gate reads size_cap for per-diff tiering) is gitignored and CI never sees it. This
 is the enforcer; keep the two numbers in step. A file over the cap is a decision to make
-(split, or raise the cap with a note), not something to let drift silently."""
+(split, or raise the cap with a note), not something to let drift silently. Raised to 400 on
+2026-09-13 for the takeover + phone settings (fork/worktree toggles) growth in rc_config and
+rc_sessions; a view/lifecycle split of rc_sessions is the lever if it climbs toward 400."""
 
 import pathlib
 import unittest
 
-CAP = 375  # keep in sync with .claude/review.toml size_cap
+CAP = 400  # keep in sync with .claude/review.toml size_cap
 
 
 class SizeCapTest(unittest.TestCase):

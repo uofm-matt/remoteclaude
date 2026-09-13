@@ -2,6 +2,25 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-13: Remote Control session names are now hostname-prefixed (`frostwrym/proj`), so
+  the Claude mobile app's own session list shows which sessions were started on the Mac —
+  Matt wanted the app itself to say a session came from the computer. Display-only via a new
+  `rc_name()`; the tmux session name and all launcher tracking are unchanged.
+
+- 2026-09-13: A phone-editable settings panel on the launcher page with two toggles — Fork
+  (branch the conversation on resume) and Worktree (isolate each session in its own git
+  worktree) — both default off and remembered across restarts. Matt uses neither and wanted
+  them switchable rather than env-only. New `rc_settings.py` holds the persisted store
+  (`~/.config/rc-launcher/settings.json`, atomic write mirroring `add_root`) and resolves
+  `resume()`/`spawn()` from it, falling back to the `RC_RESUME`/`RC_SPAWN` env defaults when
+  unset; a torn/absent/non-UTF8/malformed file reads as defaults so it can't break a launch,
+  and concurrent toggle taps are serialized so neither is lost. Fork only applies to a
+  same-dir resume, so the UI reports it off and disables its checkbox while Worktree is on
+  (a worktree session launches fresh and never resumes). New GET `/settings` route
+  (token-gated). Extracted to its own module because it pushed `rc_config` over the
+  size cap; the cap was raised 375->400 for the takeover + settings growth (see
+  tests/test_size_cap.py).
+
 - 2026-09-13: `/launch` now always takes over. A live `rc-<proj>` session is no longer a
   no-op "already" — launch reaps it (graceful stop) and any desktop claude rooted in the
   project, then starts one fresh remote session, so relaunching from the phone lands a single

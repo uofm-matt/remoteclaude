@@ -6,7 +6,7 @@
 # configured set, not "whatever the suite imported"). Grouped as the import graph layers:
 source = [
     # leaves
-    "rc_claude", "rc_state", "rc_templates", "rc_tmux",
+    "rc_claude", "rc_settings", "rc_state", "rc_templates", "rc_tmux",
     # settings, then the process probes built on them
     "rc_config", "rc_desk", "rc_git",
     # the launcher's two clusters and its web tier

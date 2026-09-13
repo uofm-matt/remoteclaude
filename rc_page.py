@@ -26,6 +26,10 @@ font-weight:600;text-transform:uppercase}
 .authbar{display:none;margin:0 0 10px;padding:9px 12px;border-radius:9px;
 background:var(--red);color:#fff;font-size:12px;line-height:1.35}
 .authbar.show{display:block}
+.setpanel{margin:0 0 10px;padding:10px 12px;border-radius:9px;background:var(--panel);
+border:1px solid var(--bd);font-size:12px;line-height:1.5}
+.setpanel label{display:flex;align-items:center;gap:9px;color:var(--fg);cursor:pointer}
+.setpanel input{width:16px;height:16px;accent-color:var(--blue);flex:0 0 auto}
 .qrow{display:flex;gap:8px;align-items:stretch}
 #q{width:100%;flex:1;padding:13px 14px;border-radius:10px;border:1px solid var(--bd);
 background:var(--panel);color:var(--fg);font:inherit;outline:none}
@@ -79,7 +83,11 @@ text-align:center}
 </style></head>
 <body>
 <header>
-<div class=htop><h1>Remote Control &middot; __HOST__</h1><span class=hdr><a class=fileslink id=addroot href="#">+ root</a><a class=fileslink href="/files">files</a><span id=auth class=auth></span></span></div>
+<div class=htop><h1>Remote Control &middot; __HOST__</h1><span class=hdr><a class=fileslink id=settingslink href="#">settings</a><a class=fileslink id=addroot href="#">+ root</a><a class=fileslink href="/files">files</a><span id=auth class=auth></span></span></div>
+<div id=settingsPanel class=setpanel style=display:none>
+<label><input type=checkbox id=tgFork> Fork the conversation on resume (branch, not continue)</label>
+<label><input type=checkbox id=tgWorktree> Isolate each session in its own git worktree</label>
+</div>
 <div id=authbar class=authbar></div>
 <div class=qrow><input id=q placeholder="filter projects&hellip;" autocomplete=off
  autocapitalize=off autocorrect=off spellcheck=false autofocus><button id=newbtn
@@ -96,7 +104,7 @@ text-align:center}
 const PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__), STARTING=new Set();
 let GITSTATES=__GITSTATES__;
 const NAME_RE=/^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-let LOGIN=__LOGIN__, STATES=__STATES__, DESK=new Set(__DESK__), noTap=0;
+let LOGIN=__LOGIN__, STATES=__STATES__, DESK=new Set(__DESK__), SETTINGS=__SETTINGS__, noTap=0;
 const $=s=>document.querySelector(s), RK='rc_recent', PK='rc_pinned';
 const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const getRecent=()=>{try{return JSON.parse(localStorage.getItem(RK))||[]}catch(e){return[]}};
@@ -209,9 +217,21 @@ async function poll(){
     const r=await fetch('/status');const j=await r.json();
     RUNNING.clear();j.running.forEach(n=>RUNNING.add(n));
     STATES=j.states||{};DESK=new Set(j.desk||[]);GITSTATES=j.git||GITSTATES;
-    LOGIN=j.login;authBar();render();
+    LOGIN=j.login;if(j.settings){SETTINGS=j.settings;syncSettings();}authBar();render();
   }catch(e){}
 }
+function syncSettings(){$('#tgFork').checked=!!SETTINGS.fork;$('#tgWorktree').checked=!!SETTINGS.worktree;
+  $('#tgFork').disabled=!!SETTINGS.worktree;}  // worktree launches fresh, so fork can't apply
+$('#settingslink').onclick=e=>{e.preventDefault();
+  const p=$('#settingsPanel');p.style.display=p.style.display==='none'?'block':'none';};
+async function setToggle(name,on){
+  try{const r=await fetch('/settings?name='+name+'&on='+(on?1:0));const j=await r.json();
+    if(j.status!=='set'){toast('\\u2717 '+(j.reason||j.status||'failed'));syncSettings();return;}
+    SETTINGS[name]=on;toast('\\u2713 '+name+' '+(on?'on':'off'));
+  }catch(e){toast('failed');syncSettings();}}
+$('#tgFork').onchange=e=>setToggle('fork',e.target.checked);
+$('#tgWorktree').onchange=e=>setToggle('worktree',e.target.checked);
+syncSettings();
 let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');
   clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2600);}
 $('#q').addEventListener('input',render);

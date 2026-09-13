@@ -24,6 +24,7 @@ from types import MappingProxyType
 import rc_config as cfg
 import rc_desk
 import rc_git
+import rc_settings
 import rc_tmux
 from rc_claude import CLAUDE, auth_status
 from rc_page import PAGE
@@ -66,6 +67,13 @@ def status_payload() -> dict:
         "desk": rc_desk.desk_projects(),
         "git": rc_git.git_states(projs),
         "roots": cfg.extra_roots(),
+        # fork only takes effect on a same-dir resume, so report it OFF while worktree is on
+        # (worktree launches fresh, never resumes) — else the toggle would lie about launches
+        "settings": {
+            "fork": rc_settings.resume() == "fork"
+            and rc_settings.spawn() == "same-dir",
+            "worktree": rc_settings.spawn() == "worktree",
+        },
     }
 
 
@@ -84,6 +92,7 @@ def page() -> bytes:
             "__GITSTATES__": js(live["git"]),
             "__DESK__": js(live["desk"]),
             "__LOGIN__": js(live["login"]),
+            "__SETTINGS__": js(live["settings"]),
             "__HOST__": html.escape(cfg.HOST),
         },
     )
@@ -130,6 +139,12 @@ def ensure_trusted(proj: str) -> None:
         cfg.log_event("trust", proj, f"skip write: {e}")
 
 
+def rc_name(proj: str) -> str:
+    """The Remote Control session name the phone app shows — hostname-prefixed so a
+    session's Mac origin is visible in the app's own list (frostwrym/proj)."""
+    return f"{cfg.HOST}/{proj}"
+
+
 def fresh_cmd(proj: str) -> list[str]:
     """Fresh-launch invocation. same-dir uses the top-level FLAG form: it starts a
     local-first session whose phone-driven turns land in a normal desk-resumable
@@ -139,22 +154,26 @@ def fresh_cmd(proj: str) -> list[str]:
     rcprobe-flag, flag-born, `claude --continue` recalled the phone conversation).
     worktree/session keep the subcommand form — the flag form takes no --spawn, and
     those modes are isolated by design, so desk resumability isn't their point."""
-    if cfg.SPAWN == "same-dir":
-        return [CLAUDE, "--remote-control", proj]
-    return [CLAUDE, "remote-control", "--name", proj, "--spawn", cfg.SPAWN]
+    if (sp := rc_settings.spawn()) == "same-dir":
+        return [CLAUDE, "--remote-control", rc_name(proj)]
+    return [CLAUDE, "remote-control", "--name", rc_name(proj), "--spawn", sp]
 
 
 def launch_cmd(proj: str) -> tuple[list[str], bool]:
-    """The claude invocation for proj, and whether it resumes. Resume is the
-    top-level flag form `claude --continue --remote-control <proj>` (the
-    remote-control subcommand can't resume); it exists only for same-dir,
-    doesn't take --spawn, and reloads the project's most recent thread so the
-    phone opens where you left off. Otherwise launch fresh."""
-    if cfg.RESUME in ("continue", "fork") and cfg.SPAWN == "same-dir":
+    """The claude invocation for proj, and whether it resumes. Resume is the top-level
+    flag form `claude --continue --remote-control <name>` (the remote-control subcommand
+    can't resume); it exists only for same-dir, doesn't take --spawn, and reloads the
+    project's most recent thread so the phone opens where you left off. The fork toggle
+    adds --fork-session (branch on resume); worktree flips spawn() off same-dir to the
+    subcommand form. Otherwise launch fresh."""
+    if (res := rc_settings.resume()) in (
+        "continue",
+        "fork",
+    ) and rc_settings.spawn() == "same-dir":
         cmd = [CLAUDE, "--continue"]
-        if cfg.RESUME == "fork":
+        if res == "fork":
             cmd.append("--fork-session")
-        return [*cmd, "--remote-control", proj], True
+        return [*cmd, "--remote-control", rc_name(proj)], True
     return fresh_cmd(proj), False
 
 

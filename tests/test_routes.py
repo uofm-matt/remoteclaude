@@ -15,6 +15,7 @@ from pathlib import Path
 
 import rc_config
 import rc_sessions
+import rc_settings
 import rc_share
 import rc_tmux
 import rc_templates
@@ -102,7 +103,9 @@ class RouteTest(ServerCase):
         subprocess.run = lambda cmd, **kw: self._resp(cmd)
         os.kill = lambda *a: None
         time.sleep = lambda *a: None
-        rc_config.RESUME = "off"  # fresh launches (no takeover) keep route tests simple
+        rc_settings.RESUME = (
+            "off"  # fresh launches (no takeover) keep route tests simple
+        )
 
     def _resp(self, cmd):
         return respond(cmd, self.desk, self.responses)

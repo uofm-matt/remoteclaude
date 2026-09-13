@@ -12,6 +12,7 @@ from pathlib import Path
 
 import rc_config
 import rc_sessions
+import rc_settings
 import rc_tmux
 
 from tests._harness import MockedToolsCase, desk, env, proc, spawn_ok
@@ -29,29 +30,30 @@ class OrchestrationTest(MockedToolsCase):
 
     def test_launch_cmd_resume_vs_fresh(self):
         c = rc_sessions.CLAUDE
-        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
+        n = rc_sessions.rc_name(
+            "proj"
+        )  # hostname-prefixed, so the app shows the origin
+        rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
         cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertTrue(resuming)
         # exact argv
-        self.assertEqual(cmd, [c, "--continue", "--remote-control", "proj"])
-        rc_config.RESUME = "fork"
+        self.assertEqual(cmd, [c, "--continue", "--remote-control", n])
+        rc_settings.RESUME = "fork"
         self.assertEqual(
             rc_sessions.launch_cmd("proj")[0],
-            [c, "--continue", "--fork-session", "--remote-control", "proj"],
+            [c, "--continue", "--fork-session", "--remote-control", n],
         )
         # fresh same-dir -> FLAG form: local-first, desk-resumable
-        rc_config.RESUME, rc_config.SPAWN = "off", "same-dir"
+        rc_settings.RESUME, rc_settings.SPAWN = "off", "same-dir"
         cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertFalse(resuming)
         # never the relay-only subcommand
-        self.assertEqual(cmd, [c, "--remote-control", "proj"])
+        self.assertEqual(cmd, [c, "--remote-control", n])
         # not same-dir -> subcommand form, exact --spawn value
-        rc_config.SPAWN = "worktree"
+        rc_settings.SPAWN = "worktree"
         cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertFalse(resuming)
-        self.assertEqual(
-            cmd, [c, "remote-control", "--name", "proj", "--spawn", "worktree"]
-        )
+        self.assertEqual(cmd, [c, "remote-control", "--name", n, "--spawn", "worktree"])
 
     def test_death_reason_classifies(self):
         self.responses = {"capture-pane": proc(stdout="please trust this workspace\n")}
@@ -99,7 +101,7 @@ class OrchestrationTest(MockedToolsCase):
         # A live rc- session is no longer a no-op "already": launch reaps it (graceful
         # stop) and starts one fresh client, so a phone relaunch always lands a single
         # clean session over whatever the computer had open.
-        rc_config.RESUME, rc_config.STOP_WAIT = "off", 0
+        rc_settings.RESUME, rc_config.STOP_WAIT = "off", 0
         seq = iter([True, False, False, False])  # alive at entry, gone by graceful_stop
         self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
         rc_tmux.has_session = lambda s: next(seq, False)
@@ -116,7 +118,7 @@ class OrchestrationTest(MockedToolsCase):
         # new-session fails because a racing takeover already holds the name, _spawn must
         # NOT inspect the pre-existing (alive) session and report it "launched" — the
         # phantom that the removed "already" no-op used to make impossible.
-        rc_config.RESUME, rc_config.STOP_WAIT = "off", 0
+        rc_settings.RESUME, rc_config.STOP_WAIT = "off", 0
         seq = iter([True, False, False, False])  # alive at entry, gone by graceful_stop
         self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
         rc_tmux.has_session = lambda s: next(seq, False)
@@ -145,7 +147,7 @@ class OrchestrationTest(MockedToolsCase):
 
     def test_launch_fresh_success(self):
         # fresh path, no takeover
-        rc_config.RESUME, rc_config.SPAWN = "off", "same-dir"
+        rc_settings.RESUME, rc_settings.SPAWN = "off", "same-dir"
         self.responses = spawn_ok()
         # a live desk claude in the project: a FRESH launch must leave it alone (the
         # takeover guard's `resuming` condition was mutation-deletable with 127 green)
@@ -162,7 +164,7 @@ class OrchestrationTest(MockedToolsCase):
         self.assertIn("RC_PROJECT=proj", newsession)  # the hook and badge key on it
         self.assertEqual(
             newsession[-1],  # the exact claude command tmux is told to run —
-            f"{rc_sessions.CLAUDE} --remote-control proj",
+            f"{rc_sessions.CLAUDE} --remote-control {rc_sessions.rc_name('proj')}",
         )  # flag form: local-first
         # rooted in the project dir (same-dir is load-bearing) and tagged so the state hook fires
         self.assertEqual(
@@ -180,7 +182,7 @@ class OrchestrationTest(MockedToolsCase):
         # servers/hooks claude spawns by name (uvx, uv, ruff) fail remotely. launch()
         # must prepend it via a per-session -e (the plist form is non-deterministic:
         # tmux sessions inherit whichever env started the tmux SERVER first).
-        rc_config.RESUME = "off"
+        rc_settings.RESUME = "off"
         self.responses = spawn_ok()
         self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
         newsession = next(
@@ -199,7 +201,7 @@ class OrchestrationTest(MockedToolsCase):
         # relay; headless, that prompt must be answered or the phone never sees the
         # session. The owner's standing choice is FULL resume (never compact): Down
         # moves off the highlighted summary option, Enter confirms.
-        rc_config.RESUME, rc_config.SPAWN = "off", "same-dir"
+        rc_settings.RESUME, rc_settings.SPAWN = "off", "same-dir"
         self.responses = spawn_ok() | {
             "capture-pane": proc(
                 stdout="Resume from summary (recommended)\nEnter to confirm\n"
@@ -213,7 +215,7 @@ class OrchestrationTest(MockedToolsCase):
     def test_launch_fails_loudly_on_unknown_prompt(self):
         # Any OTHER confirm-style prompt is a failed launch with the reason surfaced —
         # never a phantom "launched" whose session is invisible in the app.
-        rc_config.RESUME, rc_config.SPAWN = "off", "same-dir"
+        rc_settings.RESUME, rc_settings.SPAWN = "off", "same-dir"
         self.responses = spawn_ok() | {
             "capture-pane": proc(
                 stdout="Choose a login method\nEnter to confirm · Esc to cancel\n"
@@ -226,7 +228,7 @@ class OrchestrationTest(MockedToolsCase):
         self.assertTrue(any("kill-session" in c for c in self._cmds()))
 
     def test_launch_dead_pane_reports_reason_and_kills(self):
-        rc_config.RESUME = "off"
+        rc_settings.RESUME = "off"
         self.responses = {
             "has-session": proc(returncode=1),
             "pane_dead": proc(stdout="1\n"),
@@ -236,7 +238,7 @@ class OrchestrationTest(MockedToolsCase):
         self.assertTrue(any("kill-session" in c for c in self._cmds()))
 
     def test_launch_resume_falls_back_to_fresh(self):
-        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
+        rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
         # a cli thread exists, so the resume path genuinely runs
         self._seed_desk_thread("proj")
         panes = iter(["1\n", "0\n"])  # resume _spawn dies, fresh _spawn lives
@@ -260,18 +262,21 @@ class OrchestrationTest(MockedToolsCase):
         # the fallback is a FRESH flag-form launch
         self.assertEqual(
             spawns[1],
-            f"{rc_sessions.CLAUDE} --remote-control proj",
+            f"{rc_sessions.CLAUDE} --remote-control {rc_sessions.rc_name('proj')}",
         )
 
     def test_launch_skips_resume_without_desk_thread(self):
         # Brand-new or phone-born (relay-only) project: no cli transcript exists, so launch()
         # must go STRAIGHT to the fresh flag form — one spawn, no doomed --continue attempt
         # (whose late death used to read as a phantom "launched" and evaporate).
-        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
+        rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
         self.responses = spawn_ok()
         self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
         spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
-        self.assertEqual(spawns, [f"{rc_sessions.CLAUDE} --remote-control proj"])
+        self.assertEqual(
+            spawns,
+            [f"{rc_sessions.CLAUDE} --remote-control {rc_sessions.rc_name('proj')}"],
+        )
 
     def test_stop_sigint_then_kill_and_confirms(self):
         # survives SIGINT: kill-session follows, and a session still alive after that
@@ -314,7 +319,7 @@ class OrchestrationTest(MockedToolsCase):
         # A bare -t prefix-matches: with rc-proj absent and rc-proj-sub live, stop()
         # would C-c the SIBLING's session and launch() reap it as a takeover (verified
         # against a live tmux). Every -t target must be the exact-match `=name` form.
-        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
+        rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
         self.responses = spawn_ok()
         rc_sessions.launch("proj")
         rc_sessions.stop("proj")
@@ -353,7 +358,7 @@ class OrchestrationTest(MockedToolsCase):
         self.assertEqual(rc_tmux.running(), set())
 
     def test_launch_logs_snapshot_and_takeover(self):
-        rc_config.RESUME, rc_config.SPAWN = "continue", "same-dir"
+        rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
         # takeover only guards a real resume; needs a cli thread
         self._seed_desk_thread("proj")
         env(self, RC_SNAPSHOT="1", RC_STATE_DIR="/tmp/st")

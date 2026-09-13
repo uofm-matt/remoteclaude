@@ -9,8 +9,9 @@ request returning and any SSH/terminal closing.
 
 This module is only the web tier: auth, routing, request framing, and the
 /files byte-pushing. The work behind each route lives in rc_sessions (launch,
-stop, create, what's live) and rc_share (what a path is allowed to reach);
-settings come from rc_config. Refuses to start without the token file.
+stop, create, what's live) and rc_share (what a path is allowed to reach); paths
+and roots come from rc_config, the fork/worktree toggles from rc_settings. Refuses
+to start without the token file.
 """
 
 import contextlib
@@ -28,6 +29,7 @@ from urllib.parse import parse_qs, quote, urlparse
 import rc_config as cfg
 import rc_desk
 import rc_sessions
+import rc_settings
 import rc_share
 
 
@@ -130,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._create(q.get("proj", [""])[0])
             case "/addroot":
                 return self._addroot(q.get("path", [""])[0])
+            case "/settings":
+                return self._settings(q)
             case "/launch" | "/stop":
                 return self._session_verb(u.path, q)
             case path if _is_files(path):
@@ -160,6 +164,16 @@ class Handler(BaseHTTPRequestHandler):
         cfg.log_event("addroot", path.strip() or "-", status)
         if status == "added":
             rc_desk.desk_projects.invalidate()  # a new root's desk sessions must badge now
+        payload = {"status": status}
+        if reason:
+            payload["reason"] = reason
+        return self._json(payload)
+
+    def _settings(self, q: dict):
+        """Persist one launcher toggle (the settings switches): name=fork|worktree, on=0|1."""
+        name = q.get("name", [""])[0]
+        status, reason = rc_settings.set_toggle(name, q.get("on", [""])[0] == "1")
+        cfg.log_event("settings", name or "-", status)
         payload = {"status": status}
         if reason:
             payload["reason"] = reason
@@ -355,6 +369,8 @@ if __name__ == "__main__":
         raise SystemExit(
             "no launcher token: run install.sh (writes ~/.config/rc-launcher/token)"
         )
-    print(f"rc-launcher on {cfg.BIND}:{cfg.PORT} parent={cfg.PARENT} spawn={cfg.SPAWN}")
+    print(
+        f"rc-launcher on {cfg.BIND}:{cfg.PORT} parent={cfg.PARENT} spawn={rc_settings.spawn()}"
+    )
     threading.Thread(target=rc_share.sweep_loop, daemon=True).start()
     Server((cfg.BIND, cfg.PORT), Handler).serve_forever()
