@@ -87,3 +87,13 @@ Written by `refute.py`; the format is parsed, so keep the `- key: value` shape.
 - oracle: project_dir is only reached with a membership-guarded proj (launch/stop guard on 'proj in projects()') or a NAME_RE single segment (create); projects() already filters symlinked children via os.path.realpath(child).startswith(root+os.sep), so a symlink child is never in projects() and never reaches project_dir. os.replace is atomic (no torn file); fsync is durability-only and ensure_trusted sets the no-fsync precedent for this class of config write. The PARENT-basename block is the intended primary-namespace-wins collision rule (avoids an ambiguous label/name). Desk-scan's one-level truncation is correct: a project is one level under a root, so root/proj/sub maps to the proj, exactly as PARENT flat behavior does.
 - cost: reading the membership guards, projects() symlink filter, and os.replace semantics
 - unmeasured: a root on a mount that dies AFTER add is uncached on the /status poll thread (same exposure the primary PARENT os.listdir already has); a desk cwd reported non-realpath'd on macOS could miss its root prefix (display-only)
+
+## The plain /stop external-RC fallback reaps a desk claude without desk=1, and/or stop() no longer returns 'idle' for a project with no tmux and no external RC
+
+- scope: `rc_desk.py`
+- verdict: REFUTED
+- measured: 2026-09-14
+- commit: cbde305f8d5b9dad3c2a9e07ce590f44a986e02d
+- oracle: _sessions(proj, rc=True) filters is_rc, so close_remote only ever targets --remote-control processes and never a plain desk claude; _pid_stop returns ('idle') when close() yields no pids. Pinned by test_plain_stop_never_reaps_a_desk_claude (desk-only proj -> idle, killed==[]) and test_stop_falls_through_to_external_rc_when_no_tmux ('nomatch' -> idle)
+- cost: one cross-family panel run (job 0453f55c); 2 of 3 models raised it from the scoped diff without seeing _sessions/close_remote/_pid_stop
+- unmeasured: none
