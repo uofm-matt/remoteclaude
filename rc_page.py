@@ -98,6 +98,7 @@ text-align:center}
 <div class=hint id=hint style=display:none>long-press a project to pin it</div>
 </header>
 <div id=pinnedWrap style=display:none><div class=sect>Pinned</div><ul id=pinned></ul></div>
+<div id=liveWrap style=display:none><div class=sect>Live</div><ul id=live></ul></div>
 <div id=recentWrap style=display:none><div class=sect>Recent</div><ul id=recent></ul></div>
 <div class=sect>All projects</div>
 <ul id=list></ul>
@@ -158,6 +159,11 @@ function render(){
   if(!hits.length&&!canCreate)list.innerHTML='<div class=empty>no match</div>';
   $('#count').textContent=hits.length+' / '+PROJECTS.length;
   band('#pinnedWrap','#pinned',getPinned().filter(n=>PROJECTS.includes(n)),f);
+  // Live = every session /status reports live, however it was launched (tmux, external RC or
+  // desk), ordered working > waiting > plain-live — not the localStorage launch history below
+  const liveSet=new Set([...RUNNING,...EXT,...DESK].filter(n=>PROJECTS.includes(n)));
+  const rank=n=>STATES[n]==='working'?0:STATES[n]==='waiting'?1:2;
+  band('#liveWrap','#live',[...liveSet].sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)),f);
   band('#recentWrap','#recent',getRecent().filter(n=>PROJECTS.includes(n)),f);
   $('#hint').style.display=(!getPinned().length&&!f&&PROJECTS.length>8)?'':'none';
 }

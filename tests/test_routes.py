@@ -133,6 +133,23 @@ class RouteTest(ServerCase):
         self.assertNotIn(b"__PROJECTS__", body)
         self.assertNotIn(b"__LOGIN__", body)
 
+    def test_root_page_has_live_band_and_the_script_parses(self):
+        # the Live band is sourced from /status state (running/extrc/desk), so it can't drift
+        # from reality the way the localStorage Recent list does; and a JS syntax error in the
+        # inline script would leave every placeholder filled yet the page dead, so parse it
+        self.responses = {"auth status": proc(stdout='{"loggedIn": true}')}
+        out = self.get("/")[1].decode()
+        self.assertIn("id=liveWrap", out)
+        self.assertIn(
+            "band('#liveWrap'", out
+        )  # rendered from live state, not getRecent()
+        if not (node := shutil.which("node")):
+            self.skipTest("node not installed")
+        script = re.search(r"<script>(.*)</script>", out, re.S).group(1)
+        path = os.path.join(self.aux, "page.js")
+        Path(path).write_text(script)
+        self.assertEqual(subprocess.run([node, "--check", path]).returncode, 0)
+
     def test_create_route_makes_and_launches(self):
         self.responses = spawn_ok()
         status, body = self.get("/create?proj=newp")
