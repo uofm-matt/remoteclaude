@@ -143,6 +143,11 @@ class RouteTest(ServerCase):
         self.assertIn(
             "band('#liveWrap'", out
         )  # rendered from live state, not getRecent()
+        # Recent is deduped against Live, and all four bands are collapsible (persisted)
+        self.assertIn("!liveSet.has(n)", out)
+        self.assertIn("rc_collapsed", out)
+        for sec in ("pinned", "live", "recent", "all"):
+            self.assertIn(f"data-sec={sec}", out)
         if not (node := shutil.which("node")):
             self.skipTest("node not installed")
         script = re.search(r"<script>(.*)</script>", out, re.S).group(1)

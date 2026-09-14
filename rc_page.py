@@ -41,7 +41,10 @@ cursor:pointer;-webkit-tap-highlight-color:transparent}
 .count{color:var(--mut);font-size:12px;margin:8px 2px 0}
 .hint{color:var(--mut);font-size:11px;margin:5px 2px 0;opacity:.7}
 .sect{color:var(--mut);font-size:11px;letter-spacing:.6px;text-transform:uppercase;
-margin:14px 16px 4px}
+margin:14px 16px 4px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.sect::before{content:'\\25be';display:inline-block;width:13px;color:var(--mut);font-size:9px}
+.band.collapsed .sect::before{content:'\\25b8'}
+.band.collapsed ul{display:none}
 li{display:flex;align-items:center;gap:12px;padding:14px;margin:6px 0;
 border-radius:11px;background:var(--row);cursor:pointer;
 -webkit-tap-highlight-color:transparent}
@@ -97,18 +100,22 @@ text-align:center}
 <div class=count id=count></div>
 <div class=hint id=hint style=display:none>long-press a project to pin it</div>
 </header>
-<div id=pinnedWrap style=display:none><div class=sect>Pinned</div><ul id=pinned></ul></div>
-<div id=liveWrap style=display:none><div class=sect>Live</div><ul id=live></ul></div>
-<div id=recentWrap style=display:none><div class=sect>Recent</div><ul id=recent></ul></div>
-<div class=sect>All projects</div>
-<ul id=list></ul>
+<div id=pinnedWrap class=band style=display:none><div class=sect data-sec=pinned>Pinned</div><ul id=pinned></ul></div>
+<div id=liveWrap class=band style=display:none><div class=sect data-sec=live>Live</div><ul id=live></ul></div>
+<div id=recentWrap class=band style=display:none><div class=sect data-sec=recent>Recent</div><ul id=recent></ul></div>
+<div id=allWrap class=band><div class=sect data-sec=all>All projects</div><ul id=list></ul></div>
 <div id=toast></div>
 <script>
 const PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__), STARTING=new Set();
 let GITSTATES=__GITSTATES__;
 const NAME_RE=/^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 let LOGIN=__LOGIN__, STATES=__STATES__, DESK=new Set(__DESK__), EXT=new Set(__EXT__), SETTINGS=__SETTINGS__, noTap=0;
-const $=s=>document.querySelector(s), RK='rc_recent', PK='rc_pinned';
+const $=s=>document.querySelector(s), RK='rc_recent', PK='rc_pinned', CK='rc_collapsed';
+const getCollapsed=()=>{try{return new Set(JSON.parse(localStorage.getItem(CK))||[])}catch(e){return new Set()}};
+function applyCollapse(f){const c=getCollapsed();
+  ['pinned','live','recent'].forEach(k=>$('#'+k+'Wrap').classList.toggle('collapsed',c.has(k)));
+  // All never collapses while filtering, or a search would hide its own results
+  $('#allWrap').classList.toggle('collapsed',!f&&c.has('all'));}
 const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const getRecent=()=>{try{return JSON.parse(localStorage.getItem(RK))||[]}catch(e){return[]}};
 const pushRecent=n=>{let r=getRecent().filter(x=>x!==n);r.unshift(n);
@@ -164,8 +171,10 @@ function render(){
   const liveSet=new Set([...RUNNING,...EXT,...DESK].filter(n=>PROJECTS.includes(n)));
   const rank=n=>STATES[n]==='working'?0:STATES[n]==='waiting'?1:2;
   band('#liveWrap','#live',[...liveSet].sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)),f);
-  band('#recentWrap','#recent',getRecent().filter(n=>PROJECTS.includes(n)),f);
+  // Recent is launch history minus what's live now, so a live project isn't double-listed
+  band('#recentWrap','#recent',getRecent().filter(n=>PROJECTS.includes(n)&&!liveSet.has(n)),f);
   $('#hint').style.display=(!getPinned().length&&!f&&PROJECTS.length>8)?'':'none';
+  applyCollapse(f);
 }
 function band(wrap,ul,names,f){
   const w=$(wrap),u=$(ul);u.innerHTML='';
@@ -264,6 +273,13 @@ $('#addroot').onclick=async function(e){e.preventDefault();
     if(j.status!=='added'&&j.status!=='exists'){toast('\\u2717 '+(j.reason||j.status||'add failed'));return;}
     toast(j.status==='exists'?'already a root':'\\u2713 added, reloading\\u2026');setTimeout(function(){location.reload();},500);
   }catch(err){toast('add failed');}};
+document.querySelectorAll('.sect').forEach(s=>s.onclick=()=>{
+  const k=s.dataset.sec;
+  // All is force-expanded while filtering (so results always show); toggling it then would
+  // only flip the stored pref against the visible chevron, so ignore the click during a filter
+  if(k==='all'&&$('#q').value.trim())return;
+  const c=getCollapsed();c.has(k)?c.delete(k):c.add(k);
+  localStorage.setItem(CK,JSON.stringify([...c]));render();});
 authBar();render();setInterval(poll,5000);
 if(location.search)history.replaceState({},'',location.pathname);
 __PTR__
