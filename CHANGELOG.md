@@ -2,6 +2,20 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-13: The launcher now surfaces external Remote Control sessions — a
+  `claude --remote-control` started in a terminal or by the app, not by a launcher tap.
+  Matt had five such sessions live (home-ops, claims, remoteclaude, raidrush, home-projects)
+  showing nothing in the launcher, because detection only knew launcher tmux `rc-` sessions
+  (📱) and plain desk claude (🖥), and explicitly excluded `--remote-control` processes from
+  the desk scan. They now get a third badge (📡, purple) matched to their project by cwd, with
+  a ✕ that closes them. `rc_desk`'s process scan was generalized to classify RC vs non-RC;
+  `status_payload` reports `extrc = rc_projects() - running` (a project with a launcher tmux
+  session stays 📱, not external). `remote_stop` guards against pid-killing a launcher-managed
+  session (routes to the tmux stop if the project actually has a session), and `stop()` now
+  invalidates the RC scan cache so a just-closed session doesn't briefly reappear as external.
+  Size cap raised 400->410 (rc_sessions); a view/lifecycle split of rc_sessions is the
+  committed next refactor. NOTE: none of this is live until the launcher is reloaded.
+
 - 2026-09-13: Remote Control session names are now hostname-prefixed (`frostwrym/proj`), so
   the Claude mobile app's own session list shows which sessions were started on the Mac —
   Matt wanted the app itself to say a session came from the computer. Display-only via a new

@@ -190,6 +190,30 @@ class RouteTest(ServerCase):
         joined = [" ".join(map(str, c)) for c in calls]
         self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
 
+    def test_stop_ext_route_sigterms_external_rc_session(self):
+        # The X on an external-RC row: /stop?ext=1 must take the remote_stop branch and
+        # SIGTERM the --remote-control process, never the tmux C-c/kill-session path.
+        os.makedirs(os.path.join(rc_config.PARENT, "extp"))
+        root = os.path.join(rc_config.PARENT, "extp")
+        killed, calls = [], []
+
+        def kill(pid, sig):
+            killed.append((pid, sig))
+            if sig == 0:
+                raise ProcessLookupError
+
+        os.kill = kill
+        subprocess.run = lambda cmd, **kw: (calls.append(cmd), self._resp(cmd))[1]
+        self.responses = {
+            "has-session": proc(returncode=1)
+        }  # not a tmux session -> pid path
+        self.desk = {"321": desk(root, command="claude --remote-control extp")}
+        status, body = self.get("/stop?proj=extp&ext=1&json=1")
+        self.assertEqual(json.loads(body)["status"], "stopped")
+        self.assertIn((321, signal.SIGTERM), killed)
+        joined = [" ".join(map(str, c)) for c in calls]
+        self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
+
     def test_addroot_requires_the_token(self):
         self.assertEqual(self.req("GET", "/addroot?path=/tmp", cookie=False)[0], 403)
 

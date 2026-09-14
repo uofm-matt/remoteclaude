@@ -65,7 +65,12 @@ _STDLIB = (
 )
 # TTL caches keyed on project names — and names repeat across each test's tmp PARENT, so a
 # warm entry from an earlier test would otherwise answer for a different directory.
-_CACHES = (rc_git.git_state, rc_desk.desk_projects, rc_sessions.login_status)
+_CACHES = (
+    rc_git.git_state,
+    rc_desk.desk_projects,
+    rc_desk.rc_projects,
+    rc_sessions.login_status,
+)
 
 
 def proc(returncode=0, stdout="", stderr=""):

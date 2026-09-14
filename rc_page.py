@@ -60,6 +60,8 @@ background:transparent;animation:sp .7s linear infinite}
 .tag.tagwait{color:#f59e0b}
 .dot.desk{background:var(--blue);border-color:var(--blue);box-shadow:0 0 8px var(--blue)}
 .tag.tagdesk{color:var(--blue)}
+.dot.ext{background:#a78bfa;border-color:#a78bfa;box-shadow:0 0 8px #a78bfa}
+.tag.tagext{color:#a78bfa}
 .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--name)}
 .git{color:var(--mut);font-size:10px;max-width:34vw;overflow:hidden;text-overflow:ellipsis;
 white-space:nowrap;flex:0 0 auto;letter-spacing:.2px}
@@ -104,7 +106,7 @@ text-align:center}
 const PROJECTS=__PROJECTS__, RUNNING=new Set(__RUNNING__), STARTING=new Set();
 let GITSTATES=__GITSTATES__;
 const NAME_RE=/^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-let LOGIN=__LOGIN__, STATES=__STATES__, DESK=new Set(__DESK__), SETTINGS=__SETTINGS__, noTap=0;
+let LOGIN=__LOGIN__, STATES=__STATES__, DESK=new Set(__DESK__), EXT=new Set(__EXT__), SETTINGS=__SETTINGS__, noTap=0;
 const $=s=>document.querySelector(s), RK='rc_recent', PK='rc_pinned';
 const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const getRecent=()=>{try{return JSON.parse(localStorage.getItem(RK))||[]}catch(e){return[]}};
@@ -118,17 +120,19 @@ function row(n){
   const li=document.createElement('li');li.dataset.n=n;
   const live=RUNNING.has(n), starting=STARTING.has(n), st=live?STATES[n]:'', g=GITSTATES[n], pin=getPinned().includes(n);
   const desk=!live&&!starting&&DESK.has(n);  // live at the desk (auto-paired) — a tap takes it over
+  const ext=!live&&!starting&&!desk&&EXT.has(n);  // remote-control started outside the launcher
   if(starting)li.className='starting';
-  const dot=starting?'spin':st==='working'?'on work':st==='waiting'?'wait':live?'on':desk?'desk':'';
-  // where the session lives: 📱 = launcher/tmux (phone), 🖥 = plain desk claude
-  const tag=starting?'starting&hellip;':st==='working'?'\\uD83D\\uDCF1 working':st==='waiting'?'\\uD83D\\uDCF1 waiting':live?'\\uD83D\\uDCF1':desk?'\\uD83D\\uDDA5\\uFE0F':'';
+  const dot=starting?'spin':st==='working'?'on work':st==='waiting'?'wait':live?'on':ext?'ext':desk?'desk':'';
+  // where the session lives: 📱 = launcher/tmux (phone), 🖥 = plain desk claude, 📡 = external RC
+  const tag=starting?'starting&hellip;':st==='working'?'\\uD83D\\uDCF1 working':st==='waiting'?'\\uD83D\\uDCF1 waiting':live?'\\uD83D\\uDCF1':ext?'\\uD83D\\uDCE1':desk?'\\uD83D\\uDDA5\\uFE0F':'';
   const git=g?'<span class="git'+(g.d?' dirty':'')+'" title="git branch">'+esc(g.b)+(g.d?' \\u25cf':'')+'</span>':'';
+  const kind=desk?'desk':ext?'ext':'';
   li.innerHTML='<span class="dot'+(dot?' '+dot:'')+'"></span>'+
     '<span class=nm>'+(pin?'\\u2605 ':'')+n+'</span>'+git+
-    '<span class="tag'+(st==='waiting'?' tagwait':desk?' tagdesk':'')+'"'+(desk?' title="live at the desk \\u2014 tapping takes it over"':'')+'>'+tag+'</span>'+
-    ((live||desk)&&!starting?'<button class=x title="'+(desk?'close desk session':'close session')+'" aria-label="close '+n+'">&#10005;</button>':'');
+    '<span class="tag'+(st==='waiting'?' tagwait':desk?' tagdesk':ext?' tagext':'')+'"'+(ext?' title="remote control started outside the launcher"':desk?' title="live at the desk \\u2014 tapping takes it over"':'')+'>'+tag+'</span>'+
+    ((live||desk||ext)&&!starting?'<button class=x title="'+(kind==='desk'?'close desk session':kind==='ext'?'close external session':'close session')+'" aria-label="close '+n+'">&#10005;</button>':'');
   li.onclick=()=>go(n);
-  if((live||desk)&&!starting)li.querySelector('.x').onclick=e=>{e.stopPropagation();stopSess(n,desk);};
+  if((live||desk||ext)&&!starting)li.querySelector('.x').onclick=e=>{e.stopPropagation();stopSess(n,kind);};
   // long-press (touch or mouse) toggles the pin; togglePin sets noTap so the trailing
   // synthetic click that lands on the re-rendered row doesn't also launch the project.
   let t;const s0=()=>{t=setTimeout(()=>togglePin(n),550);},c0=()=>clearTimeout(t);
@@ -171,7 +175,9 @@ function authBar(){
 }
 async function go(n){
   if(Date.now()<noTap||STARTING.has(n))return;
-  if(RUNNING.has(n)){toast(n+' already live');return;}
+  // shown as running or as external RC = already live; a desk-badged row (desk beats ext)
+  // stays tappable so its advertised take-over still fires
+  if(RUNNING.has(n)||(EXT.has(n)&&!DESK.has(n))){toast(n+' already live');return;}
   STARTING.add(n);render();
   try{
     const r=await fetch('/launch?json=1&proj='+encodeURIComponent(n));
@@ -182,13 +188,14 @@ async function go(n){
     toast(j.status==='already'?n+' already live':'\\u2713 launched '+n);
   }catch(e){STARTING.delete(n);render();toast('failed: '+n);}
 }
-async function stopSess(n,isDesk){
+async function stopSess(n,kind){
   toast('closing '+n+'\\u2026');
   try{
-    const r=await fetch('/stop?json=1&proj='+encodeURIComponent(n)+(isDesk?'&desk=1':''));
+    const q=kind==='desk'?'&desk=1':kind==='ext'?'&ext=1':'';
+    const r=await fetch('/stop?json=1&proj='+encodeURIComponent(n)+q);
     const j=await r.json();
     if(j.status==='failed'){render();toast('\\u2717 '+n+': '+(j.reason||'still running'));return;}
-    if(isDesk)DESK.delete(n);else RUNNING.delete(n);
+    if(kind==='desk')DESK.delete(n);else if(kind==='ext')EXT.delete(n);else RUNNING.delete(n);
     render();
     toast(j.status==='idle'?n+' was already closed':'\\u2715 closed '+n);
   }catch(e){toast('failed to close '+n);}
@@ -216,7 +223,7 @@ async function poll(){
   try{
     const r=await fetch('/status');const j=await r.json();
     RUNNING.clear();j.running.forEach(n=>RUNNING.add(n));
-    STATES=j.states||{};DESK=new Set(j.desk||[]);GITSTATES=j.git||GITSTATES;
+    STATES=j.states||{};DESK=new Set(j.desk||[]);EXT=new Set(j.extrc||[]);GITSTATES=j.git||GITSTATES;
     LOGIN=j.login;if(j.settings){SETTINGS=j.settings;syncSettings();}authBar();render();
   }catch(e){}
 }

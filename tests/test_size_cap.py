@@ -1,14 +1,16 @@
-"""The 350->375->400 module-size cap, enforced in a TRACKED test because .claude/review.toml
-(where /gate reads size_cap for per-diff tiering) is gitignored and CI never sees it. This
-is the enforcer; keep the two numbers in step. A file over the cap is a decision to make
-(split, or raise the cap with a note), not something to let drift silently. Raised to 400 on
-2026-09-13 for the takeover + phone settings (fork/worktree toggles) growth in rc_config and
-rc_sessions; a view/lifecycle split of rc_sessions is the lever if it climbs toward 400."""
+"""The module-size cap (350->375->400->410), enforced in a TRACKED test because
+.claude/review.toml (where /gate reads size_cap for per-diff tiering) is gitignored and CI
+never sees it. This is the enforcer; keep the two numbers in step. A file over the cap is a
+decision to make (split, or raise the cap with a note), not something to let drift silently.
+Raised to 410 on 2026-09-13 for the external-RC feature — rc_sessions has now hit the cap
+repeatedly with legitimate, tested growth (takeover, settings, external RC), so the COMMITTED
+next refactor is a view/lifecycle split (login_status/session_states/status_payload/page ->
+their own module), which brings rc_sessions well back down; the bump is a stopgap for it."""
 
 import pathlib
 import unittest
 
-CAP = 400  # keep in sync with .claude/review.toml size_cap
+CAP = 410  # keep in sync with .claude/review.toml size_cap
 
 
 class SizeCapTest(unittest.TestCase):

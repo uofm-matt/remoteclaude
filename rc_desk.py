@@ -56,36 +56,45 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def _desk_claude_pids() -> Iterator[tuple[int, str]]:
-    """(pid, cwd) of every live plain (desk) claude — the ONE definition of "desk
-    claude" (a claude-named process that is not a remote-control server), shared by
-    the badge scan and the kill paths so their scopes cannot drift apart: a filter
-    fixed in one copy but not the other would mean a badge advertising sessions the
-    ✕/takeover can't close, or a takeover killing sessions the badge never showed."""
+def _claude_pids() -> Iterator[tuple[int, str, bool]]:
+    """(pid, cwd, is_rc) of every live claude — is_rc marks a remote-control server. One
+    scan feeds every consumer (the desk badge/takeover take the non-RC subset, the
+    external-RC badge/stop the RC subset), so their notion of "a claude" can't drift apart:
+    a filter fixed in one place but not another would badge sessions the ✕ can't close."""
     for pid in _run([PGREP, "-f", "claude"]).split():
         comm = _run([PS, "-o", "comm=", "-p", pid]).strip()
-        if os.path.basename(comm) != "claude":  # skip the launcher, grep, etc.
+        if os.path.basename(comm) != "claude":  # skip the launcher, tmux, grep, etc.
             continue
-        if "remote-control" in _run([PS, "-o", "command=", "-p", pid]):
-            continue  # an RC server — the launcher's own tmux dot shows it
+        is_rc = "remote-control" in _run([PS, "-o", "command=", "-p", pid])
         if cwd := _pid_cwd(pid):
-            yield int(pid), cwd
+            yield int(pid), cwd, is_rc
 
 
-def desktop_sessions(proj: str) -> list[int]:
-    """PIDs of live desk claude sessions whose cwd is inside proj — the clients a
-    resuming remote session would collide with. Scoped by cwd, so sessions for any
-    other project are never touched."""
+def _sessions(proj: str, rc: bool) -> list[int]:
+    """Live claude pids rooted in proj of the desk (rc=False) or remote-control (rc=True)
+    kind. Scoped by cwd, so another project's sessions are never touched."""
     root = cfg.project_dir(proj)
     return [
         pid
-        for pid, cwd in _desk_claude_pids()
-        if cwd == root or cwd.startswith(root + os.sep)
+        for pid, cwd, is_rc in _claude_pids()
+        if is_rc is rc and (cwd == root or cwd.startswith(root + os.sep))
     ]
 
 
+def desktop_sessions(proj: str) -> list[int]:
+    """Desk (non-RC) claude in proj — the clients a resuming remote session would collide
+    with, and what takeover closes."""
+    return _sessions(proj, rc=False)
+
+
+def remote_sessions(proj: str) -> list[int]:
+    """Remote-control claude in proj started outside the launcher (a launcher tmux rc-
+    session's project shows as running() instead) — what the external-RC ✕ closes."""
+    return _sessions(proj, rc=True)
+
+
 def _rel_project(rel: str) -> str:
-    """The project a desk cwd belongs to: "group/name" when the first path segment is a
+    """The project a cwd belongs to: "group/name" when the first path segment is a
     category (matching projects()' shape), else the first segment."""
     parts = rel.split(os.sep)
     if parts[0] in cfg.GROUPS and len(parts) > 1:
@@ -93,16 +102,17 @@ def _rel_project(rel: str) -> str:
     return parts[0]
 
 
-def _desk_scan() -> list[str]:
-    """Projects with a live desk claude rooted inside them. Current Claude Code
-    auto-pairs interactive sessions with the phone app, so these are phone-drivable —
-    but invisible to the launcher's tmux-based dots. (bridge-pointer.json was rejected
-    as the signal: live desk sessions don't reliably write one, and stale ones point
-    at dead pids.)"""
+def _scan(rc: bool) -> list[str]:
+    """Projects with a live desk (rc=False) or remote-control (rc=True) claude rooted in
+    them, keyed as projects() shapes names. Current Claude Code auto-pairs interactive desk
+    sessions with the phone, and an RC session started in a terminal is phone-drivable too —
+    both are invisible to the launcher's tmux dots, which is exactly what these badges add."""
     added = [(rp + os.sep, label) for label, rp in cfg.extra_roots().items()]
     parent = cfg.PARENT + os.sep
     out = set()
-    for _, cwd in _desk_claude_pids():
+    for _, cwd, is_rc in _claude_pids():
+        if is_rc is not rc:
+            continue
         for pre, label in added:
             if cwd.startswith(pre):
                 out.add(f"{label}/{cwd.removeprefix(pre).split(os.sep)[0]}")
@@ -114,16 +124,14 @@ def _desk_scan() -> list[str]:
 
 
 # cached so the 5s /status poll doesn't fork pgrep/ps/lsof per viewer per tick;
-# .invalidate() is how desk_stop makes a just-closed session drop off the next poll.
-desk_projects = cfg.ttl_cached(lambda: cfg.DESK_TTL)(_desk_scan)
+# .invalidate() makes a just-closed session drop off the next poll.
+desk_projects = cfg.ttl_cached(lambda: cfg.DESK_TTL)(lambda: _scan(rc=False))
+rc_projects = cfg.ttl_cached(lambda: cfg.DESK_TTL)(lambda: _scan(rc=True))
 
 
-def takeover(proj: str) -> list[int]:
-    """Close desktop claude sessions for proj so a resuming remote session isn't
-    a second client on the thread. SIGTERM first (graceful: lets each flush its
-    transcript so --continue reads the latest), wait for exit, SIGKILL any
-    straggler. Returns the pids acted on, for the audit log."""
-    pids = desktop_sessions(proj)
+def _kill_pids(pids: list[int]) -> list[int]:
+    """SIGTERM, wait, SIGKILL any straggler — graceful so each claude flushes its transcript
+    and deregisters before dying; the thread stays resumable. Returns the pids acted on."""
     for pid in pids:
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
@@ -136,3 +144,15 @@ def takeover(proj: str) -> list[int]:
             with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGKILL)
     return pids
+
+
+def takeover(proj: str) -> list[int]:
+    """Close desk claude for proj so a resuming remote session isn't a second client on the
+    thread. Returns the pids acted on, for the audit log."""
+    return _kill_pids(desktop_sessions(proj))
+
+
+def close_remote(proj: str) -> list[int]:
+    """The external-RC ✕: close remote-control sessions for proj started outside the
+    launcher, by killing the process (same graceful SIGTERM/SIGKILL as takeover)."""
+    return _kill_pids(remote_sessions(proj))

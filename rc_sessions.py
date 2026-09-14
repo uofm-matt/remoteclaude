@@ -59,12 +59,15 @@ def status_payload() -> dict:
     Git is the expensive key — one `git status` per repo — and the per-project TTL cache
     (cfg.GIT_TTL) bounds it to one fork per repo per window while a viewer is open."""
     projs = cfg.projects()
+    running = rc_tmux.running()
     return {
         "projects": projs,
-        "running": sorted(rc_tmux.running()),
+        "running": sorted(running),
         "login": login_status(),
         "states": session_states(),
         "desk": rc_desk.desk_projects(),
+        # external RC started outside the launcher, minus any shown as a launcher tmux session
+        "extrc": sorted(set(rc_desk.rc_projects()) - running),
         "git": rc_git.git_states(projs),
         "roots": cfg.extra_roots(),
         # fork only takes effect on a same-dir resume, so report it OFF while worktree is on
@@ -91,6 +94,7 @@ def page() -> bytes:
             "__STATES__": js(live["states"]),
             "__GITSTATES__": js(live["git"]),
             "__DESK__": js(live["desk"]),
+            "__EXT__": js(live["extrc"]),
             "__LOGIN__": js(live["login"]),
             "__SETTINGS__": js(live["settings"]),
             "__HOST__": html.escape(cfg.HOST),
@@ -99,15 +103,11 @@ def page() -> bytes:
 
 
 def ensure_trusted(proj: str) -> None:
-    """Pre-accept the workspace trust dialog for the project dir.
-
-    `claude remote-control` refuses to start in an untrusted dir, exiting
-    status 1 before it registers with the relay — so the app never sees the
-    session and the phone tap silently does nothing. No interactive trust
-    dialog is reachable from the phone, so we accept it here. Atomic replace,
-    and we only write when the flag is missing, to avoid racing claude's own
-    frequent writes to this file.
-    """
+    """Pre-accept the workspace trust dialog for the project dir. `claude remote-control`
+    refuses to start in an untrusted dir, exiting 1 before it registers with the relay — so
+    the app never sees the session and the phone tap silently does nothing, and no trust
+    dialog is reachable from the phone. Atomic replace, and only when the flag is missing, to
+    avoid racing claude's own frequent writes to this file."""
     key = cfg.project_dir(proj)
     try:
         d = json.loads(Path(cfg.CLAUDE_JSON).read_text())
@@ -148,12 +148,10 @@ def rc_name(proj: str) -> str:
 def fresh_cmd(proj: str) -> list[str]:
     """Fresh-launch invocation. same-dir uses the top-level FLAG form: it starts a
     local-first session whose phone-driven turns land in a normal desk-resumable
-    transcript. The `remote-control` subcommand/server form births relay-only threads
-    that neither the desk nor the launcher's own --continue can ever reopen (proven
-    2026-08-16: sandbox, subcommand-born, 68/68 sdk-cli records, resume always fell back;
-    rcprobe-flag, flag-born, `claude --continue` recalled the phone conversation).
-    worktree/session keep the subcommand form — the flag form takes no --spawn, and
-    those modes are isolated by design, so desk resumability isn't their point."""
+    transcript. The `remote-control` subcommand/server form births relay-only threads that
+    neither the desk nor the launcher's own --continue can ever reopen (proven 2026-08-16).
+    worktree/session keep the subcommand form — the flag form takes no --spawn, and those
+    modes are isolated by design, so desk resumability isn't their point."""
     if (sp := rc_settings.spawn()) == "same-dir":
         return [CLAUDE, "--remote-control", rc_name(proj)]
     return [CLAUDE, "remote-control", "--name", rc_name(proj), "--spawn", sp]
@@ -181,8 +179,7 @@ def has_desk_thread(proj: str) -> bool:
     """Anything locally resumable for proj? Desk/flag-form sessions write transcripts with
     entrypoint "cli" (or "claude-vscode"); phone-born relay-only sessions leave only
     "sdk-cli" mirrors that `--continue` refuses. Deciding up front skips the doomed resume
-    attempt entirely — its death can also land AFTER _spawn's 3s aliveness window, which
-    read as a phantom "launched" whose session then evaporated (remain-on-exit already off).
+    attempt, whose death can land AFTER _spawn's 3s window and read as a phantom "launched".
     Only the first 256 KiB of each transcript is read: the entrypoint field appears within
     the first records of every real transcript, and transcripts grow to hundreds of MB —
     slurping them whole made every launch tap pay for the largest project's history."""
@@ -337,31 +334,44 @@ def launch(proj: str) -> tuple[str, str | None]:
 
 
 def stop(proj: str) -> tuple[str, str | None]:
-    """Close proj's rc session and say whether it is actually gone. graceful_stop()
-    SIGINTs first so claude deregisters from the relay, kills only as the fallback,
-    then confirms — so the ✕ can no longer report "stopped" over a session that lives
-    (the phantom-stop the 2026-09-02 audit named), and "idle" when none existed."""
+    """Close proj's rc session and say whether it is actually gone. graceful_stop() SIGINTs
+    first so claude deregisters from the relay, kills only as the fallback, then confirms —
+    so the ✕ can't report "stopped" over a session that lives, or "idle" when none existed."""
     sess = rc_tmux.session_name(proj)
     if not rc_tmux.has_session(
         sess
     ):  # nothing under that name — a wrong/unmanaged proj
         return "idle", None
     if rc_tmux.graceful_stop(sess, wait=cfg.STOP_WAIT):
+        rc_desk.rc_projects.invalidate()  # same-dir tmux RC claude is gone; drop it from extrc
         return "stopped", None
     return "failed", "still alive after SIGINT and kill-session"
 
 
-def desk_stop(proj: str) -> tuple[str, str | None]:
-    """Gracefully close the project's desk session(s) from the phone: the same
-    SIGTERM -> wait -> SIGKILL as takeover, so claude flushes its transcript and
-    deregisters from the app pairing — the thread stays resumable afterwards
-    (desk `claude` or a launcher tap both pick it up)."""
-    pids = rc_desk.takeover(proj)
+def _pid_stop(proj, close, event, cache) -> tuple[str, str | None]:
+    """Shared body of the pid-killing ✕s: SIGTERM/wait/SIGKILL via `close`, log, then drop
+    `cache` so the badge reflects the change next poll. claude flushes its transcript and
+    deregisters on the way out, so the thread stays resumable (desk claude or a tap reopen)."""
+    pids = close(proj)
     if pids:
-        cfg.log_event("stopdesk", proj, ",".join(map(str, pids)))
-    # drop the scan cache so the badge reflects the just-changed reality next poll
-    rc_desk.desk_projects.invalidate()
+        cfg.log_event(event, proj, ",".join(map(str, pids)))
+    cache.invalidate()
     return ("stopped" if pids else "idle"), None
+
+
+def desk_stop(proj: str) -> tuple[str, str | None]:
+    """✕ on a desk-badged row: close the project's auto-paired desk claude."""
+    return _pid_stop(proj, rc_desk.takeover, "stopdesk", rc_desk.desk_projects)
+
+
+def remote_stop(proj: str) -> tuple[str, str | None]:
+    """✕ on an external-RC row: close a remote-control session started outside the launcher.
+    If the project actually has a launcher tmux session (a stale client, or a direct ext=1
+    call), route to the tmux stop so a launcher-managed session is never pid-killed by the
+    wrong path — the badge only offers this ✕ for projects absent from running()."""
+    if rc_tmux.has_session(rc_tmux.session_name(proj)):
+        return stop(proj)
+    return _pid_stop(proj, rc_desk.close_remote, "stopext", rc_desk.rc_projects)
 
 
 def create(proj: str) -> tuple[str, str | None]:

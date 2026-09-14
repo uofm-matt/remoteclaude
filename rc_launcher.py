@@ -180,14 +180,19 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(payload)
 
     def _session_verb(self, path: str, q: dict):
-        """/launch and /stop. desk=1 means something on /stop only — it is the ✕ on a
-        desk-badged row, which closes the desktop claude rather than a tmux session."""
+        """/launch and /stop. On /stop, desk=1 is the ✕ on a desk-badged row (closes the
+        desktop claude) and ext=1 the ✕ on an external-RC row (kills a remote-control session
+        started outside the launcher); neither is a tmux session, which is the default."""
         proj = q.get("proj", [""])[0]
         if proj not in cfg.projects():
             return self._json_error(404, "unknown project")
         if path == "/stop":
-            desk = q.get("desk", [""])[0] == "1"
-            status, reason = (rc_sessions.desk_stop if desk else rc_sessions.stop)(proj)
+            if q.get("ext", [""])[0] == "1":  # ✕ on an external-RC row
+                status, reason = rc_sessions.remote_stop(proj)
+            elif q.get("desk", [""])[0] == "1":  # ✕ on a desk-badged row
+                status, reason = rc_sessions.desk_stop(proj)
+            else:
+                status, reason = rc_sessions.stop(proj)
         else:
             status, reason = rc_sessions.launch(proj)
         cfg.log_event(path[1:], proj, status)
