@@ -181,17 +181,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _session_verb(self, path: str, q: dict):
         """/launch and /stop. On /stop, desk=1 is the ✕ on a desk-badged row (closes the
-        desktop claude) and ext=1 the ✕ on an external-RC row (kills a remote-control session
-        started outside the launcher); neither is a tmux session, which is the default."""
+        user's desktop claude, an explicit-only action). Otherwise plain stop() closes the
+        project's remote-control session however it was started — a launcher tmux session or
+        an external `claude --remote-control` — so a legacy ext=1 is now redundant, not wrong."""
         proj = q.get("proj", [""])[0]
         if proj not in cfg.projects():
             return self._json_error(404, "unknown project")
         if path == "/stop":
-            if q.get("ext", [""])[0] == "1":  # ✕ on an external-RC row
-                status, reason = rc_sessions.remote_stop(proj)
-            elif q.get("desk", [""])[0] == "1":  # ✕ on a desk-badged row
+            if q.get("desk", [""])[0] == "1":  # ✕ on a desk-badged row (desktop claude)
                 status, reason = rc_sessions.desk_stop(proj)
-            else:
+            else:  # tmux or, failing that, an external RC session — never desk
                 status, reason = rc_sessions.stop(proj)
         else:
             status, reason = rc_sessions.launch(proj)

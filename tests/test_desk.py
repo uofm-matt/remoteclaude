@@ -155,22 +155,21 @@ class DeskTest(MockedToolsCase):
         self.responses = {"list-sessions": proc(stdout="")}  # running() now empty
         self.assertEqual(rc_sessions.status_payload()["extrc"], [])  # not re-listed
 
-    def test_remote_stop_on_a_live_tmux_project_uses_tmux_stop_not_a_pid_kill(self):
-        # a stale UI (or a direct ext=1) can aim the external ✕ at a project that actually
-        # has a launcher tmux session; remote_stop must route to the tmux stop, never SIGTERM
-        # the tmux-managed claude by pid (panel openai:68 / xai:93)
+    def test_stop_on_a_tmux_project_uses_tmux_not_a_pid_kill(self):
+        # stop() checks tmux FIRST, so a project with a launcher tmux session takes the
+        # graceful C-c path and its claude is never pid-killed — even though the same project
+        # also has a --remote-control process (the external fallback must not fire here)
         self.desk = {
             "222": desk(
                 os.path.join(rc_config.PARENT, "proj"),
                 command="claude --remote-control proj",
             )
         }
-        # guard sees the session (True), stop() sees it (True), then graceful_stop confirms gone
-        seq = iter([True, True, False, False, False])
+        seq = iter([True, False, False, False])  # alive at entry, gone by graceful_stop
         self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
         rc_tmux.has_session = lambda s: next(seq, False)
         rc_config.STOP_WAIT = 0
-        self.assertEqual(rc_sessions.remote_stop("proj"), ("stopped", None))
+        self.assertEqual(rc_sessions.stop("proj"), ("stopped", None))
         self.assertEqual(self.killed, [])  # no pid SIGTERM/SIGKILL — took the tmux path
         self.assertTrue(any("send-keys" in c and "C-c" in c for c in self._cmds()))
 
@@ -191,21 +190,22 @@ class DeskTest(MockedToolsCase):
             (111, signal.SIGTERM), self.killed
         )  # the desk session survives
 
-    def test_remote_stop_closes_external_rc_and_clears_cache(self):
+    def test_stop_falls_through_to_external_rc_when_no_tmux(self):
+        # no tmux session -> plain stop() falls through and kills the external RC process,
+        # so a caller need not know the launch method (ext=1 is redundant now); "idle" when
+        # neither a tmux session nor an external RC process exists
         self.desk = {
             "222": desk(
                 os.path.join(rc_config.PARENT, "proj"),
                 command="claude --remote-control proj",
             )
         }
-        self.responses = {"has-session": proc(returncode=1)}  # no tmux -> the pid path
+        self.responses = {"has-session": proc(returncode=1)}  # no tmux -> the fallback
         rc_desk.rc_projects()  # a warm cache the stop must invalidate
         self.alive = set()
-        self.assertEqual(rc_sessions.remote_stop("proj"), ("stopped", None))
+        self.assertEqual(rc_sessions.stop("proj"), ("stopped", None))
         self.assertIn((222, signal.SIGTERM), self.killed)
-        self.assertEqual(
-            rc_sessions.remote_stop("nomatch"), ("idle", None)
-        )  # nothing there
+        self.assertEqual(rc_sessions.stop("nomatch"), ("idle", None))  # nothing there
 
     def test_desk_projects_maps_added_root_cwd_to_label(self):
         rc_desk.desk_projects.invalidate()

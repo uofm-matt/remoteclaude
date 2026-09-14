@@ -206,7 +206,7 @@ async function go(n){
 async function stopSess(n,kind){
   toast('closing '+n+'\\u2026');
   try{
-    const q=kind==='desk'?'&desk=1':kind==='ext'?'&ext=1':'';
+    const q=kind==='desk'?'&desk=1':'';  // ext folds into plain /stop; only desk is explicit
     const r=await fetch('/stop?json=1&proj='+encodeURIComponent(n)+q);
     const j=await r.json();
     if(j.status==='failed'){render();toast('\\u2717 '+n+': '+(j.reason||'still running'));return;}

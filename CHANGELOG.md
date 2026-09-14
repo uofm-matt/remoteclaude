@@ -2,6 +2,17 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-14: Plain `/stop` now closes a project's Remote Control session however it was
+  started — a launcher tmux session (graceful double-SIGINT) or, failing that, an external
+  `claude --remote-control` started outside the launcher (SIGTERM/SIGKILL). So `ext=1` is
+  now redundant for RC sessions and an API caller need not know the launch method. Peer
+  (home-ops) hit this repeatedly: `/stop?proj=X` returned "idle" for terminal-born RC
+  sessions it hadn't launched. The `stop()` tmux-first check makes the fallback safe (a live
+  tmux session takes the graceful path, never a pid-kill); `remote_stop` and the `/stop?ext=1`
+  route branch are removed as redundant (a legacy `ext=1` is ignored, not an error). The
+  fallback deliberately stops at external RC — a plain `/stop` never reaps a desk claude
+  (the user's own desktop session); that stays the explicit desk ✕ / `desk=1`.
+
 - 2026-09-13: The launcher now surfaces external Remote Control sessions — a
   `claude --remote-control` started in a terminal or by the app, not by a launcher tap.
   Matt had five such sessions live (home-ops, claims, remoteclaude, raidrush, home-projects)

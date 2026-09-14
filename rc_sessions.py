@@ -334,18 +334,19 @@ def launch(proj: str) -> tuple[str, str | None]:
 
 
 def stop(proj: str) -> tuple[str, str | None]:
-    """Close proj's rc session and say whether it is actually gone. graceful_stop() SIGINTs
-    first so claude deregisters from the relay, kills only as the fallback, then confirms —
-    so the ✕ can't report "stopped" over a session that lives, or "idle" when none existed."""
+    """Close proj's session however it was started. A launcher tmux session is stopped
+    gracefully — double SIGINT so claude deregisters from the relay, kill-session only as the
+    fallback, then confirmed. With no tmux session, fall through to an external remote-control
+    session (a `claude --remote-control` started outside the launcher) and kill it, so a plain
+    /stop closes the project's RC session whether it's tmux or terminal-born. Desk claude is
+    never reaped here — that stays the explicit desk ✕ (desk_stop). "idle" when none exists."""
     sess = rc_tmux.session_name(proj)
-    if not rc_tmux.has_session(
-        sess
-    ):  # nothing under that name — a wrong/unmanaged proj
-        return "idle", None
-    if rc_tmux.graceful_stop(sess, wait=cfg.STOP_WAIT):
-        rc_desk.rc_projects.invalidate()  # same-dir tmux RC claude is gone; drop it from extrc
-        return "stopped", None
-    return "failed", "still alive after SIGINT and kill-session"
+    if rc_tmux.has_session(sess):
+        if rc_tmux.graceful_stop(sess, wait=cfg.STOP_WAIT):
+            rc_desk.rc_projects.invalidate()  # the tmux RC claude is gone; drop it from extrc
+            return "stopped", None
+        return "failed", "still alive after SIGINT and kill-session"
+    return _pid_stop(proj, rc_desk.close_remote, "stopext", rc_desk.rc_projects)
 
 
 def _pid_stop(proj, close, event, cache) -> tuple[str, str | None]:
@@ -360,18 +361,10 @@ def _pid_stop(proj, close, event, cache) -> tuple[str, str | None]:
 
 
 def desk_stop(proj: str) -> tuple[str, str | None]:
-    """✕ on a desk-badged row: close the project's auto-paired desk claude."""
+    """✕ on a desk-badged row: close the project's auto-paired desk claude. Kept separate
+    from stop() on purpose — reaping a desk claude (the user's own desktop session) stays an
+    explicit action, never something a plain /stop falls into."""
     return _pid_stop(proj, rc_desk.takeover, "stopdesk", rc_desk.desk_projects)
-
-
-def remote_stop(proj: str) -> tuple[str, str | None]:
-    """✕ on an external-RC row: close a remote-control session started outside the launcher.
-    If the project actually has a launcher tmux session (a stale client, or a direct ext=1
-    call), route to the tmux stop so a launcher-managed session is never pid-killed by the
-    wrong path — the badge only offers this ✕ for projects absent from running()."""
-    if rc_tmux.has_session(rc_tmux.session_name(proj)):
-        return stop(proj)
-    return _pid_stop(proj, rc_desk.close_remote, "stopext", rc_desk.rc_projects)
 
 
 def create(proj: str) -> tuple[str, str | None]:

@@ -212,9 +212,9 @@ class RouteTest(ServerCase):
         joined = [" ".join(map(str, c)) for c in calls]
         self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
 
-    def test_stop_ext_route_sigterms_external_rc_session(self):
-        # The X on an external-RC row: /stop?ext=1 must take the remote_stop branch and
-        # SIGTERM the --remote-control process, never the tmux C-c/kill-session path.
+    def test_plain_stop_route_falls_through_to_external_rc(self):
+        # a PLAIN /stop (no ext=1) on a project with no tmux session but a live external RC
+        # process SIGTERMs it — the caller need not know how the session was started
         os.makedirs(os.path.join(rc_config.PARENT, "extp"))
         root = os.path.join(rc_config.PARENT, "extp")
         killed, calls = [], []
@@ -228,13 +228,29 @@ class RouteTest(ServerCase):
         subprocess.run = lambda cmd, **kw: (calls.append(cmd), self._resp(cmd))[1]
         self.responses = {
             "has-session": proc(returncode=1)
-        }  # not a tmux session -> pid path
+        }  # not a tmux session -> the fallback
         self.desk = {"321": desk(root, command="claude --remote-control extp")}
-        status, body = self.get("/stop?proj=extp&ext=1&json=1")
+        status, body = self.get("/stop?proj=extp&json=1")  # NO ext=1
         self.assertEqual(json.loads(body)["status"], "stopped")
         self.assertIn((321, signal.SIGTERM), killed)
         joined = [" ".join(map(str, c)) for c in calls]
         self.assertFalse(any("send-keys" in c or "kill-session" in c for c in joined))
+
+    def test_plain_stop_never_reaps_a_desk_claude(self):
+        # the load-bearing constraint: the fallback stops at external RC. A plain /stop on a
+        # project whose only live session is a DESK claude must NOT kill it — desk stays the
+        # explicit desk=1 action. Reads "idle" and signals nothing.
+        os.makedirs(os.path.join(rc_config.PARENT, "deskonly"))
+        root = os.path.join(rc_config.PARENT, "deskonly")
+        killed = []
+        os.kill = lambda pid, sig: killed.append((pid, sig))
+        self.responses = {"has-session": proc(returncode=1)}  # no tmux session
+        self.desk = {"321": desk(root)}  # a plain desk claude, no --remote-control
+        status, body = self.get("/stop?proj=deskonly&json=1")
+        self.assertEqual(
+            json.loads(body)["status"], "idle"
+        )  # nothing an RC-stop can close
+        self.assertEqual(killed, [])  # the desk claude was left alone
 
     def test_addroot_requires_the_token(self):
         self.assertEqual(self.req("GET", "/addroot?path=/tmp", cookie=False)[0], 403)
