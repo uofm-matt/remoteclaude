@@ -187,21 +187,31 @@ class Handler(BaseHTTPRequestHandler):
         proj = q.get("proj", [""])[0]
         if proj not in cfg.projects():
             return self._json_error(404, "unknown project")
+        want_model = ""
         if path == "/stop":
             if q.get("desk", [""])[0] == "1":  # ✕ on a desk-badged row (desktop claude)
                 status, reason = rc_sessions.desk_stop(proj)
             else:  # tmux or, failing that, an external RC session — never desk
                 status, reason = rc_sessions.stop(proj)
         else:
-            status, reason = rc_sessions.launch(proj)
+            want_model = q.get("model", [""])[0]  # optional per-launch model; "" -> pin
+            model = rc_settings.resolve_model(want_model)
+            if model is None:  # never pass an unrecognized value through to argv
+                allowed = " ".join(sorted(rc_settings.MODEL_ALIASES))
+                status, reason = (
+                    "failed",
+                    f"unknown model {want_model!r}; allowed: {allowed} (or full IDs)",
+                )
+            else:
+                status, reason = rc_sessions.launch(proj, model)
         cfg.log_event(path[1:], proj, status)
         if q.get("json", [""])[0] != "1":
             return self._send(200, rc_sessions.page())
         payload = {"status": status, "proj": proj}
-        if (
-            status == "already"
-        ):  # launch's reason IS the live-session kind (tmux|extrc|desk)
+        if status == "already":  # launch's reason IS the live kind (tmux|extrc|desk)
             payload["kind"] = reason
+            if want_model:  # a live session's model is never changed by an "already"
+                payload["note"] = "model not applied; /stop then /launch to switch"
         elif reason:
             payload["reason"] = reason
         return self._json(payload)

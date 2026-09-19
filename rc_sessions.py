@@ -147,37 +147,36 @@ def rc_name(proj: str) -> str:
     return f"{cfg.HOST}/{proj}"
 
 
-def fresh_cmd(proj: str) -> list[str]:
+def fresh_cmd(proj: str, model: str | None = None) -> list[str]:
     """Fresh-launch invocation. same-dir uses the top-level FLAG form: it starts a
     local-first session whose phone-driven turns land in a normal desk-resumable
     transcript. The `remote-control` subcommand/server form births relay-only threads that
     neither the desk nor the launcher's own --continue can ever reopen (proven 2026-08-16).
     worktree/session keep the subcommand form — the flag form takes no --spawn, and those
     modes are isolated by design, so desk resumability isn't their point. --model pins the
-    session's model (global flag, so it precedes the remote-control subcommand)."""
-    model = ["--model", rc_settings.MODEL]
+    session's model (global flag, so it precedes the remote-control subcommand); default pin."""
+    mflag = ["--model", model or rc_settings.MODEL]
     if (sp := rc_settings.spawn()) == "same-dir":
-        return [CLAUDE, *model, "--remote-control", rc_name(proj)]
-    return [CLAUDE, *model, "remote-control", "--name", rc_name(proj), "--spawn", sp]
+        return [CLAUDE, *mflag, "--remote-control", rc_name(proj)]
+    return [CLAUDE, *mflag, "remote-control", "--name", rc_name(proj), "--spawn", sp]
 
 
-def launch_cmd(proj: str) -> tuple[list[str], bool]:
-    """The claude invocation for proj, and whether it resumes. Resume is the top-level
-    flag form `claude --continue --remote-control <name>` (the remote-control subcommand
-    can't resume); it exists only for same-dir, doesn't take --spawn, and reloads the
-    project's most recent thread so the phone opens where you left off. The fork toggle
+def launch_cmd(proj: str, model: str | None = None) -> tuple[list[str], bool]:
+    """The claude invocation for proj, and whether it resumes. Resume is the top-level flag
+    form `claude --continue --remote-control <name>` (the subcommand can't resume); it exists
+    only for same-dir, takes no --spawn, and reloads the most recent thread. The fork toggle
     adds --fork-session (branch on resume); worktree flips spawn() off same-dir to the
-    subcommand form. --model pins the model on resume too — resume otherwise keeps the
-    thread's last model. Otherwise launch fresh."""
+    subcommand form. --model pins the model on resume too (resume otherwise keeps the thread's
+    last). Otherwise launch fresh."""
     if (res := rc_settings.resume()) in (
         "continue",
         "fork",
     ) and rc_settings.spawn() == "same-dir":
-        cmd = [CLAUDE, "--model", rc_settings.MODEL, "--continue"]
+        cmd = [CLAUDE, "--model", model or rc_settings.MODEL, "--continue"]
         if res == "fork":
             cmd.append("--fork-session")
         return [*cmd, "--remote-control", rc_name(proj)], True
-    return fresh_cmd(proj), False
+    return fresh_cmd(proj, model), False
 
 
 def has_desk_thread(proj: str) -> bool:
@@ -322,10 +321,11 @@ def live_kind(proj: str) -> str | None:
     return None
 
 
-def launch(proj: str) -> tuple[str, str | None]:
+def launch(proj: str, model: str | None = None) -> tuple[str, str | None]:
     """Idempotent: a project never gets a second session. If one is already live in any form
     (tmux/external RC/desk), return ("already", kind) and start nothing — use it, or /stop
-    then /launch to replace it. Desk/external are never killed here (closing one is the ✕)."""
+    then /launch to replace it. Desk/external are never killed here (closing one is the ✕).
+    model pins this session's model (default the RC_MODEL pin); it has no effect on already."""
     if kind := live_kind(proj):
         return "already", kind
     sess = rc_tmux.session_name(proj)
@@ -333,16 +333,16 @@ def launch(proj: str) -> tuple[str, str | None]:
     if snap := rc_git.snapshot(proj):
         cfg.log_event("snap", proj, snap)
     env_opts = _session_env(sess, proj)
-    cmd, resuming = launch_cmd(proj)
+    cmd, resuming = launch_cmd(proj, model)
     if resuming and not has_desk_thread(proj):
         # brand-new/phone-born: no --continue thread, so skip the doomed resume attempt
         cfg.log_event("resume", proj, "no desk thread; fresh launch")
-        cmd, resuming = fresh_cmd(proj), False
+        cmd, resuming = fresh_cmd(proj, model), False
     reason = _spawn(sess, proj, cmd, env_opts)
     if reason and resuming:
         # resume exits 1 with no thread; fall back to fresh, logging the real death reason
         cfg.log_event("resume", proj, f"fresh relaunch after: {reason}")
-        reason = _spawn(sess, proj, fresh_cmd(proj), env_opts)
+        reason = _spawn(sess, proj, fresh_cmd(proj, model), env_opts)
     return ("failed", reason) if reason else ("launched", None)
 
 

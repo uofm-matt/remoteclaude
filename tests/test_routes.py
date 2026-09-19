@@ -135,10 +135,12 @@ class RouteTest(ServerCase):
         self.assertEqual(status, 200)
         self.assertNotIn(b"__PROJECTS__", body)
         self.assertNotIn(b"__LOGIN__", body)
-        # the pinned-model line is rendered (fill() leaves unmatched keys literal, so this
-        # would go red if __MODEL__ were dropped from page()'s fill dict)
+        # the pinned default is rendered into the selector's title (fill() leaves unmatched
+        # keys literal, so this goes red if __MODEL__ were dropped from page()'s fill dict)
         self.assertNotIn(b"__MODEL__", body)
-        self.assertIn(f"model: {rc_settings.MODEL}".encode(), body)
+        self.assertIn(f"pin: {rc_settings.MODEL}".encode(), body)
+        # the per-launch selector, defaulting to Sonnet 5 (empty value = the pinned default)
+        self.assertIn(b'<option value="" selected>Sonnet 5</option>', body)
 
     def test_root_page_has_live_band_and_the_script_parses(self):
         # the Live band is sourced from /status state (running/extrc/desk), so it can't drift
@@ -334,6 +336,39 @@ class RouteTest(ServerCase):
             json.loads(body),
             {"status": "failed", "proj": "p", "reason": "untrusted dir"},
         )
+
+    def test_launch_route_accepts_a_model_alias(self):
+        # ?model=opus resolves to the full ID and reaches the spawned argv
+        os.makedirs(os.path.join(rc_config.PARENT, "p"))
+        calls = []
+        real = subprocess.run
+        subprocess.run = lambda cmd, **kw: (calls.append(cmd), real(cmd, **kw))[1]
+        self.responses = spawn_ok()
+        status, body = self.get("/launch?proj=p&model=opus&json=1")
+        self.assertEqual(json.loads(body)["status"], "launched")
+        newsession = next(c for c in calls if "new-session" in " ".join(map(str, c)))
+        self.assertIn("--model claude-opus-5 --remote-control", newsession[-1])
+
+    def test_launch_route_unknown_model_fails_with_allowed_list(self):
+        # a bad ?model= is rejected before any spawn; the reason names the allowed aliases
+        os.makedirs(os.path.join(rc_config.PARENT, "p"))
+        killed = []
+        os.kill = lambda pid, sig: killed.append((pid, sig))
+        status, body = self.get("/launch?proj=p&model=gpt-9&json=1")
+        d = json.loads(body)
+        self.assertEqual(d["status"], "failed")
+        self.assertIn("unknown model 'gpt-9'", d["reason"])
+        self.assertIn("opus", d["reason"])  # the allowed aliases are listed
+
+    def test_launch_already_with_model_notes_it_was_not_applied(self):
+        # an "already" answer never switches a live session's model; it says how to switch
+        os.makedirs(os.path.join(rc_config.PARENT, "p"))
+        self.desk = {"321": desk(os.path.join(rc_config.PARENT, "p"))}
+        self.responses = {"has-session": proc(returncode=1)}  # no tmux session
+        d = json.loads(self.get("/launch?proj=p&model=opus&json=1")[1])
+        self.assertEqual(d["status"], "already")
+        self.assertEqual(d["kind"], "desk")
+        self.assertIn("model not applied", d["note"])
 
     def test_create_then_failed_launch_carries_launch_reason(self):
         self.responses = self._dead_spawn()

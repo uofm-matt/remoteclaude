@@ -2,6 +2,18 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-19: Per-launch model selection. `/launch?model=<alias|full-id>` picks the model
+  for that one session; the picker now has a model dropdown (defaulting to Sonnet 5, i.e. the
+  pin). Aliases (`sonnet|opus|haiku|fable`) map to full IDs, and only allowlisted full IDs
+  ever reach the claude argv — an unrecognized value is rejected with `{"status":"failed",
+  "reason":"unknown model '<x>'; allowed: ... (or full IDs)"}` before anything spawns, so a
+  request string is never passed through as free text. Omitting `model` (or the picker's
+  default) keeps the operator pin (`RC_MODEL`, default `claude-sonnet-5`). Because a live
+  session's model can't be changed underneath it, an `"already"` answer that carried a
+  `model` adds `note: "model not applied; /stop then /launch to switch"`. The chosen model is
+  threaded through `launch`/`launch_cmd`/`fresh_cmd` as `--model` on every form (fresh and
+  resume). Per-session model reporting in `/status` was deferred.
+
 - 2026-09-19: Idempotent-/launch review follow-ups (no behavior change). Fixed a stale
   rc_page comment that still described the old desk takeover (a tap now returns
   "already (desk)", not a takeover), and removed a dead `j.launch==='already'` branch in

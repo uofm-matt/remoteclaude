@@ -21,6 +21,26 @@ RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
 # Resume otherwise keeps the thread's last model (verified 2026-09-19: `--continue --model X`
 # overrides it), so without this a resumed thread silently drifts off Sonnet 5.
 MODEL = os.environ.get("RC_MODEL", "claude-sonnet-5")
+# The models a /launch?model= request may pick. Short aliases map to full IDs; only these
+# full IDs ever reach the claude argv (a request value is never passed through as free text).
+MODEL_ALIASES = {
+    "sonnet": "claude-sonnet-5",
+    "opus": "claude-opus-5",
+    "fable": "claude-fable-5-1",
+    "haiku": "claude-haiku-4-5-20251001",
+}
+MODELS = frozenset(MODEL_ALIASES.values())
+
+
+def resolve_model(value: str) -> str | None:
+    """A /launch?model= value -> a full allowlisted model ID, or None if unrecognized.
+    Accepts a full ID or a short alias; empty falls back to the RC_MODEL default (which is
+    operator-set, so it is trusted even if it is not in the request allowlist)."""
+    if not value:
+        return MODEL
+    return value if value in MODELS else MODEL_ALIASES.get(value)
+
+
 SETTINGS_FILE = Path(
     os.path.expanduser(
         os.environ.get(

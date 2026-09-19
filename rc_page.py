@@ -41,6 +41,8 @@ cursor:pointer;-webkit-tap-highlight-color:transparent}
 .count{color:var(--mut);font-size:12px;margin:8px 2px 0}
 .hint{color:var(--mut);font-size:11px;margin:5px 2px 0;opacity:.7}
 .model{color:var(--mut);font-size:10px;margin:4px 2px 0;opacity:.6;letter-spacing:.2px}
+.model select{font:inherit;font-size:10px;color:var(--fg);background:var(--panel);
+border:1px solid var(--bd);border-radius:6px;padding:1px 4px;margin-left:4px}
 .sect{color:var(--mut);font-size:11px;letter-spacing:.6px;text-transform:uppercase;
 margin:14px 16px 4px;cursor:pointer;user-select:none;-webkit-user-select:none}
 .sect::before{content:'\\25be';display:inline-block;width:13px;color:var(--mut);font-size:9px}
@@ -100,7 +102,8 @@ text-align:center}
  class=newbtn title="new project" aria-label="new project">+</button></div>
 <div class=count id=count></div>
 <div class=hint id=hint style=display:none>long-press a project to pin it</div>
-<div class=model title="every launched session is pinned to this model">model: __MODEL__</div>
+<div class=model title="default model for a launch (pin: __MODEL__)">launch on
+ <select id=modelsel><option value="" selected>Sonnet 5</option><option value=opus>Opus 5</option><option value=haiku>Haiku 4.5</option><option value=fable>Fable 5.1</option></select></div>
 </header>
 <div id=pinnedWrap class=band style=display:none><div class=sect data-sec=pinned>Pinned</div><ul id=pinned></ul></div>
 <div id=liveWrap class=band style=display:none><div class=sect data-sec=live>Live</div><ul id=live></ul></div>
@@ -197,7 +200,8 @@ async function go(n){
   if(RUNNING.has(n)||(EXT.has(n)&&!DESK.has(n))){toast(n+' already live');return;}
   STARTING.add(n);render();
   try{
-    const r=await fetch('/launch?json=1&proj='+encodeURIComponent(n));
+    const mv=$('#modelsel').value;  // "" = the pinned default (Sonnet 5)
+    const r=await fetch('/launch?json=1&proj='+encodeURIComponent(n)+(mv?'&model='+mv:''));
     const j=await r.json();
     STARTING.delete(n);
     if(j.status==='failed'){render();toast('\\u2717 '+n+': '+(j.reason||'failed to start'));return;}
@@ -207,9 +211,10 @@ async function go(n){
     if(j.status==='already'){
       const k=j.kind;
       if(k==='tmux')RUNNING.add(n);else if(k==='extrc')EXT.add(n);else if(k==='desk')DESK.add(n);
-      render();toast(n+' already live ('+(k||'?')+') \\u2014 \\u2715 to stop it first');return;}
+      // j.note (set when a model was requested) says the live session's model is unchanged
+      render();toast(n+' already live ('+(k||'?')+') \\u2014 \\u2715 to stop it first'+(j.note?'; '+j.note:''));return;}
     RUNNING.add(n);pushRecent(n);render();
-    toast('\\u2713 launched '+n);
+    toast('\\u2713 launched '+n+(mv?' on '+mv:''));
   }catch(e){STARTING.delete(n);render();toast('failed: '+n);}
 }
 async function stopSess(n,kind){

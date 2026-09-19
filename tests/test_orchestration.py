@@ -62,6 +62,30 @@ class OrchestrationTest(MockedToolsCase):
         self.assertEqual(
             cmd, [c, *m, "remote-control", "--name", n, "--spawn", "worktree"]
         )
+        # an explicit per-launch model overrides the pin on every form
+        rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
+        self.assertEqual(
+            rc_sessions.launch_cmd("proj", "claude-opus-5")[0],
+            [c, "--model", "claude-opus-5", "--continue", "--remote-control", n],
+        )
+        rc_settings.RESUME = "off"
+        self.assertEqual(
+            rc_sessions.fresh_cmd("proj", "claude-opus-5"),
+            [c, "--model", "claude-opus-5", "--remote-control", n],
+        )
+        # a non-canonical RESUME (env typo) resolves to fresh, not resume: the membership
+        # test is deliberate, not `!= "off"` — only "continue"/"fork" reopen a thread
+        rc_settings.RESUME, rc_settings.SPAWN = "yes", "same-dir"
+        self.assertFalse(rc_sessions.launch_cmd("proj")[1])
+
+    def test_resolve_model_aliases_ids_and_unknown(self):
+        # a short alias resolves to the full ID; a full ID passes through; empty -> the pin;
+        # anything else is None so the route can reject it rather than pass free text to argv
+        self.assertEqual(rc_settings.resolve_model("opus"), "claude-opus-5")
+        self.assertEqual(rc_settings.resolve_model("claude-opus-5"), "claude-opus-5")
+        self.assertEqual(rc_settings.resolve_model(""), rc_settings.MODEL)
+        self.assertIsNone(rc_settings.resolve_model("gpt-9"))
+        self.assertIsNone(rc_settings.resolve_model("claude-nonexistent"))
 
     def test_death_reason_classifies(self):
         self.responses = {"capture-pane": proc(stdout="please trust this workspace\n")}
@@ -213,6 +237,21 @@ class OrchestrationTest(MockedToolsCase):
         self.assertTrue(any("remain-on-exit on" in c for c in cmds))
         self.assertTrue(any("remain-on-exit off" in c for c in cmds))
 
+    def test_launch_with_explicit_model_threads_it_into_the_spawn(self):
+        # a per-launch model reaches the exact claude argv tmux runs, overriding the pin
+        rc_settings.RESUME, rc_settings.SPAWN = "off", "same-dir"
+        self.responses = spawn_ok()
+        self.assertEqual(
+            rc_sessions.launch("proj", "claude-opus-5"), ("launched", None)
+        )
+        newsession = next(
+            c for c in self.calls if "new-session" in " ".join(map(str, c))
+        )
+        self.assertEqual(
+            newsession[-1],
+            f"{rc_sessions.CLAUDE} --model claude-opus-5 --remote-control {rc_sessions.rc_name('proj')}",
+        )
+
     def test_launch_injects_local_bin_on_path(self):
         # Phone-launched sessions inherit a truncated PATH missing ~/.local/bin, so MCP
         # servers/hooks claude spawns by name (uvx, uv, ruff) fail remotely. launch()
@@ -291,14 +330,19 @@ class OrchestrationTest(MockedToolsCase):
             return proc()
 
         subprocess.run = run
-        self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
+        # an explicit model must survive the resume->fresh fallback, not revert to the pin
+        self.assertEqual(
+            rc_sessions.launch("proj", "claude-opus-5"), ("launched", None)
+        )
         spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
         self.assertEqual(len(spawns), 2)
-        self.assertIn("--continue", spawns[0])  # first attempt resumes
-        # the fallback is a FRESH flag-form launch
+        self.assertIn(
+            "--model claude-opus-5 --continue", spawns[0]
+        )  # resume carries it
+        # the fallback is a FRESH flag-form launch, still on the requested model
         self.assertEqual(
             spawns[1],
-            f"{rc_sessions.CLAUDE} --model {rc_settings.MODEL} --remote-control {rc_sessions.rc_name('proj')}",
+            f"{rc_sessions.CLAUDE} --model claude-opus-5 --remote-control {rc_sessions.rc_name('proj')}",
         )
 
     def test_launch_skips_resume_without_desk_thread(self):

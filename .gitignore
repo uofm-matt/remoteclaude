@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .coverage
 coverage.json
+coverage.xml
 .ruff_cache/
 # .claude/ is private (review.toml carries the panel address) except the refutation record,
 # which travels with the code (decision 2026-09-02): claims plus the measurements that killed them
