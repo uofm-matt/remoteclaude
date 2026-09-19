@@ -101,6 +101,9 @@ class RouteTest(ServerCase):
         self.responses: dict = {}
         self.desk: dict = {}
         subprocess.run = lambda cmd, **kw: self._resp(cmd)
+        # force _pid_cwd down the mocked lsof path — on Linux a real /proc/<pid>/cwd for a
+        # colliding pid would bypass the desk mock (macOS has no /proc, so it hid this)
+        os.path.islink = lambda p: False
         os.kill = lambda *a: None
         time.sleep = lambda *a: None
         rc_settings.RESUME = (

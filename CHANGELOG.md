@@ -2,6 +2,13 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-19: Fix a Linux-only flaky-CI bug in RouteTest — its setUp mocked subprocess but,
+  unlike MockedToolsCase, never forced `os.path.islink` to False, so desk detection read the
+  runner's real `/proc/<pid>/cwd` whenever the test's fake pid (321) collided with a live
+  process, and the desk/stop route tests failed with the wrong status. macOS has no `/proc`,
+  which is why it never reproduced locally. Added the same `islink=False` guard to
+  RouteTest.setUp. Test-only; surfaced by the per-launch-model push turning CI red.
+
 - 2026-09-19: Per-launch model selection. `/launch?model=<alias|full-id>` picks the model
   for that one session; the picker now has a model dropdown (defaulting to Sonnet 5, i.e. the
   pin). Aliases (`sonnet|opus|haiku|fable`) map to full IDs, and only allowlisted full IDs
