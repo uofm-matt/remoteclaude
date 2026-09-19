@@ -70,6 +70,7 @@ def status_payload() -> dict:
         "extrc": sorted(set(rc_desk.rc_projects()) - running),
         "git": rc_git.git_states(projs),
         "roots": cfg.extra_roots(),
+        "model": rc_settings.MODEL,  # the model every launch is pinned to (not per-session)
         # fork only takes effect on a same-dir resume, so report it OFF while worktree is on
         # (worktree launches fresh, never resumes) — else the toggle would lie about launches
         "settings": {
@@ -97,6 +98,7 @@ def page() -> bytes:
             "__EXT__": js(live["extrc"]),
             "__LOGIN__": js(live["login"]),
             "__SETTINGS__": js(live["settings"]),
+            "__MODEL__": html.escape(live["model"]),
             "__HOST__": html.escape(cfg.HOST),
         },
     )
@@ -151,10 +153,12 @@ def fresh_cmd(proj: str) -> list[str]:
     transcript. The `remote-control` subcommand/server form births relay-only threads that
     neither the desk nor the launcher's own --continue can ever reopen (proven 2026-08-16).
     worktree/session keep the subcommand form — the flag form takes no --spawn, and those
-    modes are isolated by design, so desk resumability isn't their point."""
+    modes are isolated by design, so desk resumability isn't their point. --model pins the
+    session's model (global flag, so it precedes the remote-control subcommand)."""
+    model = ["--model", rc_settings.MODEL]
     if (sp := rc_settings.spawn()) == "same-dir":
-        return [CLAUDE, "--remote-control", rc_name(proj)]
-    return [CLAUDE, "remote-control", "--name", rc_name(proj), "--spawn", sp]
+        return [CLAUDE, *model, "--remote-control", rc_name(proj)]
+    return [CLAUDE, *model, "remote-control", "--name", rc_name(proj), "--spawn", sp]
 
 
 def launch_cmd(proj: str) -> tuple[list[str], bool]:
@@ -163,12 +167,13 @@ def launch_cmd(proj: str) -> tuple[list[str], bool]:
     can't resume); it exists only for same-dir, doesn't take --spawn, and reloads the
     project's most recent thread so the phone opens where you left off. The fork toggle
     adds --fork-session (branch on resume); worktree flips spawn() off same-dir to the
-    subcommand form. Otherwise launch fresh."""
+    subcommand form. --model pins the model on resume too — resume otherwise keeps the
+    thread's last model. Otherwise launch fresh."""
     if (res := rc_settings.resume()) in (
         "continue",
         "fork",
     ) and rc_settings.spawn() == "same-dir":
-        cmd = [CLAUDE, "--continue"]
+        cmd = [CLAUDE, "--model", rc_settings.MODEL, "--continue"]
         if res == "fork":
             cmd.append("--fork-session")
         return [*cmd, "--remote-control", rc_name(proj)], True

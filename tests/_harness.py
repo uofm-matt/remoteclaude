@@ -50,7 +50,7 @@ _ATTRS = {
         "log_event",
     ),
     rc_sessions: ("STATE_DIR",),
-    rc_settings: ("RESUME", "SPAWN", "SETTINGS_FILE"),
+    rc_settings: ("RESUME", "SPAWN", "MODEL", "SETTINGS_FILE"),
 }
 # Stdlib singletons the subprocess-mock rebinds. These are the very module objects every
 # rc_* module imported, so one patch here reaches all of them at once.

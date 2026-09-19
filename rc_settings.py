@@ -17,6 +17,10 @@ _LOCK = threading.Lock()
 
 SPAWN = os.environ.get("RC_SPAWN", "same-dir")  # same-dir | worktree | session
 RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
+# Pinned model for every launched session, passed as --model on fresh AND resume launches.
+# Resume otherwise keeps the thread's last model (verified 2026-09-19: `--continue --model X`
+# overrides it), so without this a resumed thread silently drifts off Sonnet 5.
+MODEL = os.environ.get("RC_MODEL", "claude-sonnet-5")
 SETTINGS_FILE = Path(
     os.path.expanduser(
         os.environ.get(

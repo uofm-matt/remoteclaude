@@ -40,6 +40,7 @@ cursor:pointer;-webkit-tap-highlight-color:transparent}
 .newbtn:active{background:var(--row2)}
 .count{color:var(--mut);font-size:12px;margin:8px 2px 0}
 .hint{color:var(--mut);font-size:11px;margin:5px 2px 0;opacity:.7}
+.model{color:var(--mut);font-size:10px;margin:4px 2px 0;opacity:.6;letter-spacing:.2px}
 .sect{color:var(--mut);font-size:11px;letter-spacing:.6px;text-transform:uppercase;
 margin:14px 16px 4px;cursor:pointer;user-select:none;-webkit-user-select:none}
 .sect::before{content:'\\25be';display:inline-block;width:13px;color:var(--mut);font-size:9px}
@@ -99,6 +100,7 @@ text-align:center}
  class=newbtn title="new project" aria-label="new project">+</button></div>
 <div class=count id=count></div>
 <div class=hint id=hint style=display:none>long-press a project to pin it</div>
+<div class=model title="every launched session is pinned to this model">model: __MODEL__</div>
 </header>
 <div id=pinnedWrap class=band style=display:none><div class=sect data-sec=pinned>Pinned</div><ul id=pinned></ul></div>
 <div id=liveWrap class=band style=display:none><div class=sect data-sec=live>Live</div><ul id=live></ul></div>

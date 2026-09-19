@@ -2,6 +2,17 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-19: Every launched session is pinned to a model — `--model $RC_MODEL` (default
+  `claude-sonnet-5`) on every launch form: the same-dir fresh flag form, the resume
+  (`--continue`) form, and the worktree/session subcommand form (as a global flag before the
+  subcommand). Matt wants launcher sessions on Sonnet 5 100% of the time. This matters on
+  resume specifically: a resumed thread otherwise keeps whatever model it last ran on
+  (verified live 2026-09-19 — two resumed sessions came up on Opus 5 while the settings
+  default was `sonnet`), and `claude --continue --model X` was confirmed to override that
+  (fresh run recorded claude-sonnet-5, the resumed run with `--model claude-opus-4-8`
+  recorded opus-4-8). `RC_MODEL` lives in rc_settings; `/status` and the picker header show
+  the pinned model (the config value, not a per-session transcript read).
+
 - 2026-09-14: Plain `/stop` now closes a project's Remote Control session however it was
   started — a launcher tmux session (graceful double-SIGINT) or, failing that, an external
   `claude --remote-control` started outside the launcher (SIGTERM/SIGKILL). So `ext=1` is

@@ -125,6 +125,9 @@ class RouteTest(ServerCase):
         self.assertEqual(d["login"], "ok")
         self.assertIn("alpha", d["running"])
         self.assertIn("git", d)  # badges follow the poll now, not just the page load
+        self.assertEqual(
+            d["model"], rc_settings.MODEL
+        )  # the pinned launch model, surfaced
 
     def test_root_page_fills_placeholders(self):
         self.responses = {"auth status": proc(stdout='{"loggedIn": true}')}
@@ -132,6 +135,10 @@ class RouteTest(ServerCase):
         self.assertEqual(status, 200)
         self.assertNotIn(b"__PROJECTS__", body)
         self.assertNotIn(b"__LOGIN__", body)
+        # the pinned-model line is rendered (fill() leaves unmatched keys literal, so this
+        # would go red if __MODEL__ were dropped from page()'s fill dict)
+        self.assertNotIn(b"__MODEL__", body)
+        self.assertIn(f"model: {rc_settings.MODEL}".encode(), body)
 
     def test_root_page_has_live_band_and_the_script_parses(self):
         # the Live band is sourced from /status state (running/extrc/desk), so it can't drift

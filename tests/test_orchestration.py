@@ -33,27 +33,34 @@ class OrchestrationTest(MockedToolsCase):
         n = rc_sessions.rc_name(
             "proj"
         )  # hostname-prefixed, so the app shows the origin
+        rc_settings.MODEL = "claude-sonnet-5"
+        m = [
+            "--model",
+            "claude-sonnet-5",
+        ]  # pinned on EVERY form, right after the binary
         rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
         cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertTrue(resuming)
         # exact argv
-        self.assertEqual(cmd, [c, "--continue", "--remote-control", n])
+        self.assertEqual(cmd, [c, *m, "--continue", "--remote-control", n])
         rc_settings.RESUME = "fork"
         self.assertEqual(
             rc_sessions.launch_cmd("proj")[0],
-            [c, "--continue", "--fork-session", "--remote-control", n],
+            [c, *m, "--continue", "--fork-session", "--remote-control", n],
         )
         # fresh same-dir -> FLAG form: local-first, desk-resumable
         rc_settings.RESUME, rc_settings.SPAWN = "off", "same-dir"
         cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertFalse(resuming)
-        # never the relay-only subcommand
-        self.assertEqual(cmd, [c, "--remote-control", n])
-        # not same-dir -> subcommand form, exact --spawn value
+        # never the relay-only subcommand; --model precedes --remote-control
+        self.assertEqual(cmd, [c, *m, "--remote-control", n])
+        # not same-dir -> subcommand form; --model is a GLOBAL flag before the subcommand
         rc_settings.SPAWN = "worktree"
         cmd, resuming = rc_sessions.launch_cmd("proj")
         self.assertFalse(resuming)
-        self.assertEqual(cmd, [c, "remote-control", "--name", n, "--spawn", "worktree"])
+        self.assertEqual(
+            cmd, [c, *m, "remote-control", "--name", n, "--spawn", "worktree"]
+        )
 
     def test_death_reason_classifies(self):
         self.responses = {"capture-pane": proc(stdout="please trust this workspace\n")}
@@ -164,7 +171,7 @@ class OrchestrationTest(MockedToolsCase):
         self.assertIn("RC_PROJECT=proj", newsession)  # the hook and badge key on it
         self.assertEqual(
             newsession[-1],  # the exact claude command tmux is told to run —
-            f"{rc_sessions.CLAUDE} --remote-control {rc_sessions.rc_name('proj')}",
+            f"{rc_sessions.CLAUDE} --model {rc_settings.MODEL} --remote-control {rc_sessions.rc_name('proj')}",
         )  # flag form: local-first
         # rooted in the project dir (same-dir is load-bearing) and tagged so the state hook fires
         self.assertEqual(
@@ -262,7 +269,7 @@ class OrchestrationTest(MockedToolsCase):
         # the fallback is a FRESH flag-form launch
         self.assertEqual(
             spawns[1],
-            f"{rc_sessions.CLAUDE} --remote-control {rc_sessions.rc_name('proj')}",
+            f"{rc_sessions.CLAUDE} --model {rc_settings.MODEL} --remote-control {rc_sessions.rc_name('proj')}",
         )
 
     def test_launch_skips_resume_without_desk_thread(self):
@@ -275,7 +282,9 @@ class OrchestrationTest(MockedToolsCase):
         spawns = [c[-1] for c in self.calls if "new-session" in " ".join(map(str, c))]
         self.assertEqual(
             spawns,
-            [f"{rc_sessions.CLAUDE} --remote-control {rc_sessions.rc_name('proj')}"],
+            [
+                f"{rc_sessions.CLAUDE} --model {rc_settings.MODEL} --remote-control {rc_sessions.rc_name('proj')}"
+            ],
         )
 
     def test_stop_sigint_then_kill_and_confirms(self):
