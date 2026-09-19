@@ -193,7 +193,7 @@ function authBar(){
 async function go(n){
   if(Date.now()<noTap||STARTING.has(n))return;
   // shown as running or as external RC = already live; a desk-badged row (desk beats ext)
-  // stays tappable so its advertised take-over still fires
+  // still calls /launch, which returns "already (desk)" and guides to stop-first below
   if(RUNNING.has(n)||(EXT.has(n)&&!DESK.has(n))){toast(n+' already live');return;}
   STARTING.add(n);render();
   try{
@@ -201,8 +201,15 @@ async function go(n){
     const j=await r.json();
     STARTING.delete(n);
     if(j.status==='failed'){render();toast('\\u2717 '+n+': '+(j.reason||'failed to start'));return;}
+    // idempotent launch: an existing session (tmux/extrc/desk) is kept, not replaced.
+    // Record the kind so the row shows its \\u2715 immediately (else the toast points at a
+    // stop control that wouldn't appear until the next 5s poll populates the set).
+    if(j.status==='already'){
+      const k=j.kind;
+      if(k==='tmux')RUNNING.add(n);else if(k==='extrc')EXT.add(n);else if(k==='desk')DESK.add(n);
+      render();toast(n+' already live ('+(k||'?')+') \\u2014 \\u2715 to stop it first');return;}
     RUNNING.add(n);pushRecent(n);render();
-    toast(j.status==='already'?n+' already live':'\\u2713 launched '+n);
+    toast('\\u2713 launched '+n);
   }catch(e){STARTING.delete(n);render();toast('failed: '+n);}
 }
 async function stopSess(n,kind){

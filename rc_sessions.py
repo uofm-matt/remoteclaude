@@ -307,17 +307,28 @@ def _session_env(sess: str, proj: str) -> list[str]:
     return [opt for name, value in env.items() for opt in ("-e", f"{name}={value}")]
 
 
+def live_kind(proj: str) -> str | None:
+    """Which live session proj already has ("tmux"|"extrc"|"desk") or None, matched by cwd.
+    tmux is a live check; the desk/RC scans are force-freshed so a just-died one can't block."""
+    if rc_tmux.has_session(rc_tmux.session_name(proj)):
+        return "tmux"
+    rc_desk.rc_projects.invalidate()
+    rc_desk.desk_projects.invalidate()
+    # desk before extrc to match the picker badge (desk beats ext) so kind agrees with the ✕
+    if proj in rc_desk.desk_projects():
+        return "desk"
+    if proj in rc_desk.rc_projects():
+        return "extrc"
+    return None
+
+
 def launch(proj: str) -> tuple[str, str | None]:
-    """Take over and launch: reap this launcher's own live rc- session for proj, and —
-    when resuming, so the phone would be a second client on that thread — any desktop
-    claude rooted in it, then start one fresh remote session. So a launch lands one clean
-    client, never a no-op or a racing client. A prior rc- session that won't die fails
-    loudly (its name can't be reused); a phone/relay client can't be evicted headlessly."""
+    """Idempotent: a project never gets a second session. If one is already live in any form
+    (tmux/external RC/desk), return ("already", kind) and start nothing — use it, or /stop
+    then /launch to replace it. Desk/external are never killed here (closing one is the ✕)."""
+    if kind := live_kind(proj):
+        return "already", kind
     sess = rc_tmux.session_name(proj)
-    if rc_tmux.has_session(sess):
-        if not rc_tmux.graceful_stop(sess, wait=cfg.STOP_WAIT):
-            return "failed", "prior session would not stop for takeover"
-        cfg.log_event("takeover", proj, f"reaped {sess}")
     ensure_trusted(proj)
     if snap := rc_git.snapshot(proj):
         cfg.log_event("snap", proj, snap)
@@ -327,9 +338,6 @@ def launch(proj: str) -> tuple[str, str | None]:
         # brand-new/phone-born: no --continue thread, so skip the doomed resume attempt
         cfg.log_event("resume", proj, "no desk thread; fresh launch")
         cmd, resuming = fresh_cmd(proj), False
-    # hand the thread off from the desk: close any desktop claude on it first
-    if resuming and (killed := rc_desk.takeover(proj)):
-        cfg.log_event("takeover", proj, ",".join(map(str, killed)))
     reason = _spawn(sess, proj, cmd, env_opts)
     if reason and resuming:
         # resume exits 1 with no thread; fall back to fresh, logging the real death reason

@@ -97,3 +97,13 @@ Written by `refute.py`; the format is parsed, so keep the `- key: value` shape.
 - oracle: _sessions(proj, rc=True) filters is_rc, so close_remote only ever targets --remote-control processes and never a plain desk claude; _pid_stop returns ('idle') when close() yields no pids. Pinned by test_plain_stop_never_reaps_a_desk_claude (desk-only proj -> idle, killed==[]) and test_stop_falls_through_to_external_rc_when_no_tmux ('nomatch' -> idle)
 - cost: one cross-family panel run (job 0453f55c); 2 of 3 models raised it from the scoped diff without seeing _sessions/close_remote/_pid_stop
 - unmeasured: none
+
+## Idempotent /launch can return 'already' forever on a stale/over-broad desk cache, or refuses to recover a stale/dead tmux wrapper (never reaped), stranding the project
+
+- scope: `rc_sessions.py`
+- verdict: REFUTED
+- measured: 2026-09-19
+- commit: 541cabc3f6b614295f2ef1e3a28ac039c164f982
+- oracle: live_kind force-freshes rc_projects+desk_projects (invalidate) before the check, pinned by test_launch_freshness_a_stale_cache_does_not_refuse; a normally-exited session leaves no has_session=true zombie (remain-on-exit is off in steady state); recovery of any stuck session is /stop (closes any kind) then /launch, by design
+- cost: one cross-family panel run (job cf4318b3); openai raised both from the scoped diff
+- unmeasured: a tmux session wedged with remain-on-exit stuck ON was not exercised; recovery there is still /stop then /launch

@@ -299,17 +299,20 @@ class RouteTest(ServerCase):
             },
         )
 
-    def test_launch_ignores_the_desk_flag(self):
-        # desk=1 only means something on /stop; on /launch it must launch, not desk-stop
-        # (the audit's half-pin: only the /stop side of the conditional was tested)
+    def test_launch_on_a_desk_live_project_is_already_not_a_launch(self):
+        # idempotent: a live desk claude for the project makes /launch return "already" with
+        # kind=desk (the response shape the picker turns into a stop-first prompt); it starts
+        # nothing and kills nothing — desk=1 is meaningless on /launch (only /stop reads it)
         os.makedirs(os.path.join(rc_config.PARENT, "p"))
         killed = []
         os.kill = lambda pid, sig: killed.append((pid, sig))
         self.desk = {"321": desk(os.path.join(rc_config.PARENT, "p"))}
-        self.responses = spawn_ok()
-        status, body = self.get("/launch?proj=p&desk=1&json=1")
-        self.assertEqual(json.loads(body)["status"], "launched")
-        self.assertEqual(killed, [])
+        self.responses = {"has-session": proc(returncode=1)}  # no tmux session
+        status, body = self.get("/launch?proj=p&json=1")
+        d = json.loads(body)
+        self.assertEqual(d["status"], "already")
+        self.assertEqual(d["kind"], "desk")
+        self.assertEqual(killed, [])  # the desk claude is not reaped by /launch
 
     def test_unknown_route_404(self):
         self.assertEqual(self.get("/nonexistent")[0], 404)

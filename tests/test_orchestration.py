@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 import rc_config
+import rc_desk
 import rc_sessions
 import rc_settings
 import rc_tmux
@@ -104,63 +105,91 @@ class OrchestrationTest(MockedToolsCase):
         # would mean full-file slurps per tap again
         self.assertFalse(rc_sessions.has_desk_thread("proj"))
 
-    def test_launch_takes_over_a_running_session(self):
-        # A live rc- session is no longer a no-op "already": launch reaps it (graceful
-        # stop) and starts one fresh client, so a phone relaunch always lands a single
-        # clean session over whatever the computer had open.
-        rc_settings.RESUME, rc_config.STOP_WAIT = "off", 0
-        seq = iter([True, False, False, False])  # alive at entry, gone by graceful_stop
-        self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
-        rc_tmux.has_session = lambda s: next(seq, False)
-        self.responses = {"pane_dead": proc(stdout="0\n")}
-        events = []
-        rc_config.log_event = lambda *a: events.append(a)
-        self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
-        # it Ctrl-C'd the prior session (took over) rather than short-circuiting
-        self.assertTrue(any("send-keys" in c and "C-c" in c for c in self._cmds()))
-        self.assertIn("takeover", [e[0] for e in events])
+    def test_launch_already_for_a_live_tmux_session(self):
+        # idempotent: a live launcher tmux session -> ("already","tmux"), nothing spawned
+        self.responses = {"has-session": proc(returncode=0)}
+        self.assertEqual(rc_sessions.launch("proj"), ("already", "tmux"))
+        self.assertFalse(any("new-session" in c for c in self._cmds()))
+
+    def test_launch_already_for_a_live_external_rc(self):
+        # no tmux, but a claude --remote-control rooted in proj -> ("already","extrc")
+        self.responses = {"has-session": proc(returncode=1)}
+        self.desk = {
+            "222": desk(
+                os.path.join(rc_config.PARENT, "proj"),
+                command="claude --remote-control proj",
+            )
+        }
+        self.assertEqual(rc_sessions.launch("proj"), ("already", "extrc"))
+        self.assertFalse(any("new-session" in c for c in self._cmds()))
+
+    def test_launch_already_for_a_live_desk_claude(self):
+        # no tmux, a plain desktop claude rooted in proj -> ("already","desk") and NOT reaped
+        self.responses = {"has-session": proc(returncode=1)}
+        self.desk = {"111": desk(os.path.join(rc_config.PARENT, "proj"))}
+        self.assertEqual(rc_sessions.launch("proj"), ("already", "desk"))
+        self.assertFalse(any("new-session" in c for c in self._cmds()))
+        self.assertEqual(
+            self.killed, []
+        )  # desk stays live; closing it is the explicit ✕
+
+    def test_launch_already_both_live_reports_desk_matching_the_badge(self):
+        # a project with BOTH a desk claude and an external RC claude: live_kind must return
+        # "desk" (not "extrc") so the "already" kind agrees with the picker badge/✕, which
+        # give desk precedence over ext (rc_page row())
+        self.responses = {"has-session": proc(returncode=1)}
+        self.desk = {
+            "111": desk(os.path.join(rc_config.PARENT, "proj")),  # plain desk claude
+            "222": desk(
+                os.path.join(rc_config.PARENT, "proj"),
+                command="claude --remote-control proj",
+            ),
+        }
+        self.assertEqual(rc_sessions.launch("proj"), ("already", "desk"))
+
+    def test_launch_freshness_a_stale_cache_does_not_refuse(self):
+        # live_kind force-freshes the desk/RC scan, so a session that died within the poll
+        # window can't linger in the cache and block a real launch with a spurious "already"
+        self.responses = spawn_ok()  # has-session=1, pane alive
+        self.desk = {
+            "222": desk(
+                os.path.join(rc_config.PARENT, "proj"),
+                command="claude --remote-control proj",
+            )
+        }
+        rc_desk.rc_projects()  # warm the cache with proj present
+        self.desk = {}  # the process is now gone
+        self.assertEqual(
+            rc_sessions.launch("proj"), ("launched", None)
+        )  # not "already"
+
+    def test_launch_cwd_sibling_prefix_is_not_a_false_positive(self):
+        # matched by cwd, scoped exact-or-subdir: a claude in a SIBLING-PREFIX dir ("alpha"
+        # vs a cwd of ".../alpha-sub") must NOT read as alpha and refuse alpha's own launch
+        self.responses = spawn_ok()
+        self.desk = {"222": desk(os.path.join(rc_config.PARENT, "alpha-sub"))}
+        self.assertEqual(rc_sessions.launch("alpha"), ("launched", None))
 
     def test_launch_bails_when_new_session_name_collides(self):
-        # Concurrency guard: two /launch on one proj both reap and both reach _spawn. If
-        # new-session fails because a racing takeover already holds the name, _spawn must
-        # NOT inspect the pre-existing (alive) session and report it "launched" — the
-        # phantom that the removed "already" no-op used to make impossible.
-        rc_settings.RESUME, rc_config.STOP_WAIT = "off", 0
-        seq = iter([True, False, False, False])  # alive at entry, gone by graceful_stop
-        self.addCleanup(setattr, rc_tmux, "has_session", rc_tmux.has_session)
-        rc_tmux.has_session = lambda s: next(seq, False)
-        # new-session collides; the pre-existing session is alive (pane not dead) — so the
-        # old code would have sailed through to a phantom ("launched", None)
+        # No live session at entry, so launch proceeds to _spawn; if new-session then fails
+        # (a racing launch already holds the name), _spawn must bail rather than inspect and
+        # report on the pre-existing session as "launched".
+        rc_settings.RESUME = "off"
         self.responses = {
-            "new-session": proc(returncode=1),
+            "has-session": proc(returncode=1),  # nothing live -> launch proceeds
+            "new-session": proc(returncode=1),  # ...but the name is taken by a racer
             "pane_dead": proc(stdout="0\n"),
         }
         status, reason = rc_sessions.launch("proj")
         self.assertEqual(status, "failed")
         self.assertIn("new-session", reason)
-        # never touched the session it did not create
         self.assertFalse(any("remain-on-exit" in c for c in self._cmds()))
 
-    def test_launch_fails_loudly_when_prior_session_wont_die(self):
-        # A prior session that survives SIGINT and kill-session can't be taken over —
-        # the new session would collide on its name — so launch fails loudly instead of
-        # silently attaching to (and reporting "launched" over) the old one.
-        rc_config.STOP_WAIT = 0
-        self.responses = {"has-session": proc(returncode=0)}  # never dies
-        status, reason = rc_sessions.launch("proj")
-        self.assertEqual(status, "failed")
-        self.assertIn("would not stop", reason)
-        self.assertFalse(any("new-session" in c for c in self._cmds()))
-
     def test_launch_fresh_success(self):
-        # fresh path, no takeover
+        # fresh path — nothing live, so launch spawns
         rc_settings.RESUME, rc_settings.SPAWN = "off", "same-dir"
         self.responses = spawn_ok()
-        # a live desk claude in the project: a FRESH launch must leave it alone (the
-        # takeover guard's `resuming` condition was mutation-deletable with 127 green)
-        self.desk = {"777": desk(os.path.join(rc_config.PARENT, "proj"))}
         self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
-        self.assertEqual(self.killed, [])
         # ensure_trusted ran at the call site: the trust flag landed in CLAUDE_JSON
         trusted = json.loads(Path(rc_config.CLAUDE_JSON).read_text())
         key = os.path.join(rc_config.PARENT, "proj")
@@ -325,9 +354,9 @@ class OrchestrationTest(MockedToolsCase):
         self.assertFalse(any("kill-session" in c for c in self._cmds()))
 
     def test_tmux_targets_are_exact_match(self):
-        # A bare -t prefix-matches: with rc-proj absent and rc-proj-sub live, stop()
-        # would C-c the SIBLING's session and launch() reap it as a takeover (verified
-        # against a live tmux). Every -t target must be the exact-match `=name` form.
+        # A bare -t prefix-matches: with rc-proj absent and rc-proj-sub live, has_session
+        # (live_kind) and stop() would target the SIBLING's session (verified against a live
+        # tmux). Every -t target must be the exact-match `=name` form.
         rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
         self.responses = spawn_ok()
         rc_sessions.launch("proj")
@@ -366,28 +395,21 @@ class OrchestrationTest(MockedToolsCase):
         subprocess.run = boom
         self.assertEqual(rc_tmux.running(), set())
 
-    def test_launch_logs_snapshot_and_takeover(self):
+    def test_launch_logs_snapshot(self):
+        # a real launch (nothing live) with RC_SNAPSHOT set records a git snapshot first
         rc_settings.RESUME, rc_settings.SPAWN = "continue", "same-dir"
-        # takeover only guards a real resume; needs a cli thread
-        self._seed_desk_thread("proj")
+        self._seed_desk_thread("proj")  # a cli thread so the resume path runs
         env(self, RC_SNAPSHOT="1", RC_STATE_DIR="/tmp/st")
         events = []
         rc_config.log_event = lambda *a: events.append(a)
-        self.desk = {"111": desk(os.path.join(rc_config.PARENT, "proj"))}
         self.responses = {
             "has-session": proc(returncode=1),
             "is-inside-work-tree": proc(returncode=0),
             "stash create": proc(stdout="deadbeef\n"),
             "pane_dead": proc(stdout="0\n"),
         }
-        self.alive = set()  # takeover target dies cleanly
         self.assertEqual(rc_sessions.launch("proj"), ("launched", None))
-        kinds = [e[0] for e in events]
-        self.assertIn("snap", kinds)
-        self.assertIn("takeover", kinds)
-        # takeover is unconditional now: the desk claude was actually signalled, not
-        # merely logged (a bare log line would survive deleting the os.kill)
-        self.assertTrue(any(pid == 111 for pid, _ in self.killed))
+        self.assertIn("snap", [e[0] for e in events])
 
 
 if __name__ == "__main__":

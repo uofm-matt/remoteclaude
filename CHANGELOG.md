@@ -2,6 +2,23 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-19: `/launch` is idempotent — a project never gets a second session. If one is
+  already live in any form — a launcher tmux session, an external `claude --remote-control`
+  started outside the launcher, or a desktop claude — `/launch` returns `{"status":"already",
+  "kind":"tmux|extrc|desk"}` and starts nothing; the caller uses that session, or `/stop`
+  then `/launch` to replace it. This reverses the 2026-09-13 takeover (a live session is now
+  kept, not reaped) per Matt's "never open two of the same": takeover could never safely kill
+  an external or desktop session (Matt's own terminal tabs), and idempotency prevents the
+  duplicate `/launch` used to start beside a terminal/desktop session. Liveness is matched to
+  a project by the process's working directory; the tmux check is live and the desk/RC scans
+  are force-freshed before the check so a session that died within the poll window can't
+  linger in the cache and refuse a real launch. The picker turns "already (desk)" into a
+  stop-first prompt rather than a bare failure. Removed: the tmux-reap and desk-takeover from
+  `launch()` (the `takeover()` helper stays for the desk ✕). KNOWN ACCEPTED RACE: the
+  liveness check → spawn window is guarded only for tmux (the `new-session` name-collision
+  check); an external RC or desktop claude that starts in that window can still slip past
+  into a second session beside it — accepted, launches are infrequent taps.
+
 - 2026-09-19: Every launched session is pinned to a model — `--model $RC_MODEL` (default
   `claude-sonnet-5`) on every launch form: the same-dir fresh flag form, the resume
   (`--continue`) form, and the worktree/session subcommand form (as a global flag before the

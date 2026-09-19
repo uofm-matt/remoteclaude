@@ -198,7 +198,11 @@ class Handler(BaseHTTPRequestHandler):
         if q.get("json", [""])[0] != "1":
             return self._send(200, rc_sessions.page())
         payload = {"status": status, "proj": proj}
-        if reason:
+        if (
+            status == "already"
+        ):  # launch's reason IS the live-session kind (tmux|extrc|desk)
+            payload["kind"] = reason
+        elif reason:
             payload["reason"] = reason
         return self._json(payload)
 
