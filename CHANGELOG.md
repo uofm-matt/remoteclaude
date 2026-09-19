@@ -2,6 +2,12 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-19: Idempotent-/launch review follow-ups (no behavior change). Fixed a stale
+  rc_page comment that still described the old desk takeover (a tap now returns
+  "already (desk)", not a takeover), and removed a dead `j.launch==='already'` branch in
+  createProj — a just-created project is never already-live, so launch there only ever
+  returns launched/failed.
+
 - 2026-09-19: `/launch` is idempotent — a project never gets a second session. If one is
   already live in any form — a launcher tmux session, an external `claude --remote-control`
   started outside the launcher, or a desktop claude — `/launch` returns `{"status":"already",

@@ -129,7 +129,7 @@ const togglePin=n=>{const p=getPinned(),on=!p.includes(n);
 function row(n){
   const li=document.createElement('li');li.dataset.n=n;
   const live=RUNNING.has(n), starting=STARTING.has(n), st=live?STATES[n]:'', g=GITSTATES[n], pin=getPinned().includes(n);
-  const desk=!live&&!starting&&DESK.has(n);  // live at the desk (auto-paired) — a tap takes it over
+  const desk=!live&&!starting&&DESK.has(n);  // live at the desk — a tap returns "already (desk)"
   const ext=!live&&!starting&&!desk&&EXT.has(n);  // remote-control started outside the launcher
   if(starting)li.className='starting';
   const dot=starting?'spin':st==='working'?'on work':st==='waiting'?'wait':live?'on':ext?'ext':desk?'desk':'';
@@ -235,10 +235,10 @@ async function createProj(n){
     STARTING.delete(n);
     if(j.status!=='created'&&j.status!=='exists'){
       drop();render();toast('\\u2717 '+n+': '+(j.reason||j.status||'create failed'));return;}
-    if(j.launch==='launched'||j.launch==='already')RUNNING.add(n);
+    if(j.launch==='launched')RUNNING.add(n);  // a just-created project is never "already"
     pushRecent(n);PROJECTS.sort();$('#q').value='';render();
     if(j.status==='exists')toast(n+' already exists');
-    else if(j.launch&&j.launch!=='launched'&&j.launch!=='already')
+    else if(j.launch&&j.launch!=='launched')
       toast('created '+n+', start failed: '+(j.launch_reason||j.launch));
     else toast('\\u2713 created & started '+n);
   }catch(e){STARTING.delete(n);drop();render();toast('failed: '+n);}
