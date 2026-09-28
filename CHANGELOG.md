@@ -2,6 +2,21 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-28: README verification pass (12 source commits since 2026-09-13), docs only.
+  Fixed: the launch paragraph still said every tap "closes any desktop session" and is
+  toggled by `RC_TAKEOVER`; launch has been idempotent since 2026-09-19 and `RC_TAKEOVER`
+  is no longer read anywhere in `rc_*.py`. It now describes the idempotent launch and the
+  `--model` pin. Also fixed the Android paragraph's "zero server changes" (the files page
+  has a user-agent branch for the wrapper's DownloadManager). Added what shipped without
+  the README: a Session API table (`/launch` with `model=`, `/stop`, `/status`, `/create`,
+  `/settings`, `/addroot`, `/version`), the picker's bands, badges, settings switches and
+  **+ root** link, and an `rc_settings.py` row in the module table. Still stale outside
+  this change's scope: RUNBOOK.md ("Resume & takeover", the `RC_TAKEOVER` bullet, the
+  Design decisions line about taking over the desk by default) and `install.sh` (writes
+  `RC_TAKEOVER` into the plist/unit and prints "disable with RC_TAKEOVER=0"); the README
+  says so in its launch paragraph and that sentence should go once those are fixed.
+  `docs/launcher.png` predates the bands, badges and model dropdown.
+
 - 2026-09-19: Fix a Linux-only flaky-CI bug in RouteTest — its setUp mocked subprocess but,
   unlike MockedToolsCase, never forced `os.path.islink` to False, so desk detection read the
   runner's real `/proc/<pid>/cwd` whenever the test's fake pid (321) collided with a live

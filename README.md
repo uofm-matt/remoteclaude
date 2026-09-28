@@ -26,7 +26,11 @@ keys won't open Remote Control).
 ## What it does
 
 A small always-on web server on the host shows a searchable list of every
-directory under `~/projects`. Tap one and it launches claude with Remote Control
+directory under `~/projects` (plus any extra roots, from `RC_PROJECT_ROOTS` or the
+picker's **+ root** link), grouped into Live, Recent, Pinned and All bands, with a badge
+for how each live session was started (launcher, external remote control, desktop). A
+settings link holds two switches: fork the thread on resume, and isolate each session in
+its own git worktree. Tap one and it launches claude with Remote Control
 in that project's root (resuming the project's last thread when one exists),
 held in a detached `tmux` session so it survives the HTTP request returning. The session shows up in the Claude app under Code with a green
 dot, and you drive it from there. Because it launched in the project root, it
@@ -35,9 +39,17 @@ like the VS Code extension (and re-reads `CLAUDE.md` — global and project — 
 every launch, so edits are live on the next tap).
 
 By default each tap **resumes the project's most recent thread** (`claude
---continue`), so the phone opens where you left off, and it **closes any desktop
-session** for that same project first so they don't fight over one thread. See
-[RUNBOOK.md](RUNBOOK.md#resume--takeover); toggle with `RC_RESUME`/`RC_TAKEOVER`.
+--continue`), so the phone opens where you left off. Launch is **idempotent**: if the
+project already has a live session in any form (a launcher tmux session, a
+`claude --remote-control` started in a terminal, or a plain desktop claude), the tap
+starts nothing and says which kind is live, and it never closes a desktop session. To
+replace one, stop it (the ✕) and launch again. Every launched session is pinned to
+`claude-sonnet-5` with `--model` (`RC_MODEL`), because a resumed thread otherwise keeps
+whatever model it last ran on; the picker's model dropdown, or `/launch?model=`, picks
+another allowlisted model for that one launch. `RC_RESUME` sets the resume mode. (The
+desk takeover this section used to describe is retired: `RC_TAKEOVER` is no longer read,
+though `install.sh` still writes it and RUNBOOK.md's "Resume & takeover" section still
+describes it.)
 
 You can also create a new project from the interface: tap the **+** button (or
 type a name that matches nothing and pick the "create & start" row). It makes the
@@ -63,11 +75,29 @@ project resolves outside the share and is refused over HTTP by design. For a rea
 letter on a Windows machine, share `~/rc-share` over macOS SMB and `net use` it (by IP)
 over the same subnet route. See [RUNBOOK.md](RUNBOOK.md).
 
+## Session API
+
+Other sessions and scripts can drive the launcher over the same HTTP routes the picker
+uses. Every route except `/version` needs the token (`?token=` or the cookie), and
+`/launch` and `/stop` return the picker page unless you add `json=1`. `proj` is the bare
+directory name under `~/projects`.
+
+| Route | What it does |
+|---|---|
+| `/launch?proj=P[&model=M]` | Start P's session. `{"status":"launched"}`, `{"status":"already","kind":"tmux\|extrc\|desk"}` (nothing started; a `note` says a requested `model` was not applied), or `{"status":"failed","reason":...}`. `M` is `sonnet`, `opus`, `fable`, `haiku` or a full ID from the allowlist in `rc_settings.py`; anything else fails with the allowed list. Default is the `RC_MODEL` pin. |
+| `/stop?proj=P[&desk=1]` | Close P's remote-control session, launcher tmux or external. `stopped`, `idle` (nothing matched), or `failed`. It never touches a desktop claude unless `desk=1`. |
+| `/status` | JSON: `projects`, `running` (launcher tmux), `extrc`, `desk`, per-session `states`, `git`, `roots`, `login`, `settings`, and the pinned `model`. |
+| `/create?proj=P` | Make the project, then launch it. |
+| `/settings?name=fork\|worktree&on=0\|1` | Persist one of the two launcher switches. |
+| `/addroot?path=D` | Register an extra project root. |
+| `/version` | Unauthenticated build stamp, used by the watchdog. |
+
 ## Android app
 
 Optional. The [`android/`](android/) subproject is a thin native WebView wrapper: a
 home-screen app that loads the launcher's own page chrome-free (no browser URL bar),
-reusing the entire web UI with zero server changes. It's a sideloaded APK, no Play
+reusing the entire web UI with one server-side accommodation (the files page recognises
+the wrapper's user agent, so downloads go through Android's DownloadManager). It's a sideloaded APK, no Play
 Store. A real installable PWA isn't possible here because the launcher is plain HTTP
 (service workers need a secure context), so the wrapper is the clean way to an app
 frame. Build and install steps in [android/README.md](android/README.md).
@@ -86,9 +116,10 @@ so the launcher only handles switching between projects.
 
 | File | Role |
 |---|---|
-| `rc_launcher.py` | Token-guarded web server: launch, stop, live status, create-new-project, and `/files` browse/download/upload of `~/rc-share`. Runs under launchd (macOS) or systemd --user (Linux). The HTTP tier only — the work behind each route lives in the modules below. |
+| `rc_launcher.py` | Token-guarded web server: launch, stop, live status, create-new-project, add-root, the settings switches, and `/files` browse/download/upload of `~/rc-share`. Runs under launchd (macOS) or systemd --user (Linux). The HTTP tier only — the work behind each route lives in the modules below. |
 | `rc_sessions.py` / `rc_share.py` | The launcher's two clusters: starting, describing and closing phone-driven sessions; and the `~/rc-share` file share (what a path may reach, how a directory is listed, the abandoned-upload sweep). |
-| `rc_config.py` / `rc_tmux.py` / `rc_git.py` / `rc_desk.py` (+ leaves `rc_claude.py`, `rc_state.py`) | Leaves both clusters share: every env-derived setting plus the audit log and TTL cache; the tmux verbs (also used by `rc_guard.py`); per-project branch/dirty and the opt-in snapshot; the desk-claude scan and takeover; the `claude auth status` contract; the turn-state vocabulary. |
+| `rc_config.py` / `rc_tmux.py` / `rc_git.py` / `rc_desk.py` (+ leaves `rc_claude.py`, `rc_state.py`) | Leaves both clusters share: the env-derived settings (except the launch switches in `rc_settings.py`) plus the audit log and TTL cache; the tmux verbs (also used by `rc_guard.py`); per-project branch/dirty and the opt-in snapshot; the desk-claude scan and takeover; the `claude auth status` contract; the turn-state vocabulary. |
+| `rc_settings.py` | The launch policy: the phone-editable fork/worktree switches (persisted beside the token), the pinned model `RC_MODEL`, and the `/launch?model=` allowlist. |
 | `rc_templates.py` / `rc_page.py` / `rc_files_page.py` (+ `rc_upload.js`, `rc_download.js`) | The embedded frontend: the chunks both pages share and the per-request fill, then one file per page; the two JS files carry the resumable-upload policy and the download size-cap decision, pure and `node --test`-covered. |
 | `rc_state_hook.py` | Claude hook recording a remote session's turn state (working/waiting/idle) for desk-side awareness. |
 | `rc_status.py` / `rc_prompt.zsh` | Reader + opt-in zsh prompt tag showing when a remote turn is live in your current repo. |
