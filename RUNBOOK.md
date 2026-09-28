@@ -59,10 +59,11 @@ a change to a leaf can't reach back into the launcher.
 | `rc_tmux.py` | tmux spoken once: the binary, `tmux()`, session naming, `has_session`, `graceful_stop` | — |
 | `rc_templates.py` | the chunks both pages share, plus `fill()`/`js()` | — |
 | `rc_page.py`, `rc_files_page.py` | one page template each, spliced at import | `rc_templates` |
-| `rc_config.py` | every env-derived setting, `log_event`, `projects()`, the TTL-cache decorator | `rc_claude` |
+| `rc_settings.py` | the launch policy: phone-editable fork/worktree switches, the `RC_MODEL` pin, the `?model=` allowlist | — |
+| `rc_config.py` | the env-derived settings (the launch switches live in `rc_settings`), `log_event`, `projects()`, the TTL-cache decorator | `rc_claude` |
 | `rc_git.py` | per-project branch/dirty for the badges, and the opt-in `RC_SNAPSHOT` checkpoint | `rc_config` |
-| `rc_desk.py` | finding, badging and closing desk (non-remote) claude sessions | `rc_config` |
-| `rc_sessions.py` | starting, describing and closing the sessions a phone tap drives | the four above |
+| `rc_desk.py` | finding, badging and closing desk (non-remote) and external remote-control claude sessions | `rc_config` |
+| `rc_sessions.py` | starting, describing and closing the sessions a phone tap drives | `rc_config`, `rc_desk`, `rc_git`, `rc_settings`, `rc_tmux` |
 | `rc_share.py` | the `~/rc-share` boundary, its listing, and the `.rcpart` sweep | `rc_config`, page |
 | `rc_launcher.py` | the HTTP tier: auth, routing, framing, `/files` byte-pushing | `rc_sessions`, `rc_share` |
 | `rc_guard.py` | the desk-side launch guard (attach / takeover / fresh) | `rc_tmux` |
@@ -118,12 +119,17 @@ dot in the launcher too, refreshed every 5s from `/status`, so a session that
 dies on its own clears without a manual reload. Tapping a live row again is a
 no-op ("already live"). Rows also show *where* a project is live: **📱** means
 the launcher runs it (tmux), **🖥** means a plain desk `claude` is live there
-(auto-paired with the app; tapping the row takes it over). The **✕** closes a
+(auto-paired with the app; tapping the row reports it as already live and points to the
+✕, it takes nothing over), **📡** means a `claude --remote-control` started outside the
+launcher. The **✕** closes a
 session where it lives: on a 📱 row it sends claude the double Ctrl-C its TUI needs,
 waits for a clean exit, kills the tmux session only as a fallback, and reports "failed"
 if the session is somehow still there; on a
-🖥 row it SIGTERMs the desk claude gracefully (transcript flushed, relay
-archived, thread still resumable). Recents float to the top (localStorage).
+🖥 or 📡 row it SIGTERMs that claude gracefully (transcript flushed, relay
+archived, thread still resumable). The list is banded Pinned, Live, Recent and All, each
+collapsible; Recent leaves out anything already Live, and pins, recents and collapsed
+state live in localStorage. The header's "launch on" dropdown picks the model for the next
+launch (default Sonnet 5, the pin).
 
 To start a brand-new project, type a name that matches nothing: a dashed
 **＋ create & start** row appears (or just press Enter). It makes the folder under
@@ -141,7 +147,7 @@ when it first detects this, so you usually hear about it before you tap.
 Launches and stops are logged with Mountain-Time stamps to `/tmp/rc-launcher.log`
 (`launch greenbutton -> launched`), an audit trail of what you started when.
 
-## Resume & takeover
+## Resume & idempotent launch
 
 By default every tap **reopens the project's most recent thread** (`claude --continue
 --remote-control <proj>`), so the phone lands where you left off — the recent turns are
@@ -159,33 +165,58 @@ flag-form), and is symmetric from then on. Separately, current Claude Code auto-
 interactive desk sessions with the phone app — one session, multiple viewers — which is
 why a desk session can appear on the phone with no launcher involvement at all.
 
-Because a resumed thread would make the phone a second live client on it, the launcher
-first **hands the project off**: it closes any live *desktop* claude session (VS Code or
-terminal) whose working dir is inside that project — SIGTERM, wait for it to flush its
-transcript and exit, SIGKILL only if it won't. Scoped strictly by process cwd, so a
-desktop session on any *other* project keeps running. The thread survives the handoff
-(the transcript is on disk — that's what the phone resumes), but a desktop session caught
-mid-turn has that turn cut off.
+A tap never starts a second session for a project. Before spawning, `launch()` checks
+whether the project already has a live session in any form and, if so, starts nothing and
+returns `already` with the kind: `tmux` (a launcher session, a live `has-session` check),
+`desk` (a plain desktop claude, VS Code or terminal) or `extrc` (a `claude
+--remote-control` started in a terminal). Kinds are matched by the process's working
+directory inside the project, so a session on another project is never involved, and the
+desk and remote-control scans are forced fresh first so a session that just died can't
+refuse a real launch. When a desk and an external session are both live the answer is
+`desk`, matching the picker badge. A launch never closes a desktop or external session.
+To replace one, stop it and launch again: `/stop` closes a launcher tmux session or an
+external RC session, and closes a desktop claude only when asked explicitly (`desk=1`, the
+✕ on a 🖥 row). One accepted race: the check-then-spawn window is guarded only for tmux
+(the `new-session` name collision), so an external RC or desktop claude that starts inside
+it can still end up beside the new session. (This replaced the desk takeover, which
+SIGTERMed any desktop claude on the project before a resumed launch; it was retired
+2026-09-19 because it could never safely close an external or desktop session in use.)
+
+Every launch passes `--model`, fresh and resume alike: `RC_MODEL` (default
+`claude-sonnet-5`) unless the request names another. A resumed thread otherwise keeps the
+model it last ran on, and `--model` overrides that (verified 2026-09-19), so without the
+pin a session drifts. `/launch?model=` (or the picker's "launch on" dropdown) takes
+`sonnet`, `opus`, `fable`, `haiku` or a full ID from the allowlist in `rc_settings.py`;
+only those IDs ever reach the claude argv, and anything else returns `failed` listing the
+allowed values before anything spawns. A model requested for an already-live project is
+not applied (`already` carries a note); `/stop` then `/launch` to switch. `/status`
+reports the pin as `model`, not any running session's model.
 
 A brand-new project (create-and-start) has no thread to continue: the launcher checks
 up front (`has_desk_thread` — is there a desk-resumable transcript?) and goes straight
 to the fresh flag-form launch, so nothing breaks and no doomed resume attempt is paid.
 The exit-1 fallback still exists underneath as a safety net for other startup deaths.
 
-Toggles (set at install time, e.g. `RC_RESUME=off ./install.sh`):
+Switches: `RC_RESUME` and `RC_SPAWN` are set at install time (e.g. `RC_RESUME=off
+./install.sh`); the launcher's settings link flips fork and worktree at runtime and
+persists them to `~/.config/rc-launcher/settings.json` (`RC_LAUNCHER_SETTINGS_FILE`).
 - `RC_RESUME` — `continue` (default), `fork` (branch a new thread from the last one,
-  leaving the desktop thread untouched), or `off` (always start fresh).
-- `RC_TAKEOVER` — `1` (default) closes the project's desktop session first; `0` leaves it
-  running and you accept two clients on one thread.
+  leaving the original untouched), or `off` (always start fresh).
+- Once a switch has been written from the phone, its off state is the plain default
+  (continue / same-dir), so the non-default env values `RC_RESUME=off` and
+  `RC_SPAWN=session|worktree` stop being reachable from then on.
+- `RC_TAKEOVER` is retired: nothing reads it. `install.sh` still writes it into the
+  service file, where it has no effect.
 
 Resume applies to `same-dir` spawn (the default); `RC_SPAWN=worktree`/`session` always
-launch fresh, since those modes are isolated by design. Takeover uses `pgrep`/`ps`/`lsof`
-and is verified on macOS; on Linux it reads `/proc/<pid>/cwd` and should behave the
-same, but has not been exercised there — treat Linux takeover as untested, not as off.
+launch fresh, since those modes are isolated by design. The liveness check and the
+desk/external ✕ use `pgrep`/`ps`/`lsof` and are verified on macOS; on Linux they read
+`/proc/<pid>/cwd` and should behave the same, but have not been exercised there — treat
+Linux detection as untested, not as off.
 
-Caveat: if VS Code auto-restarts the session it just lost and reattaches, it re-creates
-the collision — close that panel rather than letting it reconnect while you drive from the
-phone.
+Caveat: the launcher refuses to start a second session, but it cannot stop a desk claude
+you open by hand afterwards on a project the phone already holds. The opt-in desk-side
+guard (below) covers that direction.
 
 ### Desk-side shell integration (bash/zsh, opt-in)
 
@@ -395,13 +426,16 @@ login, and it's the same lever the stale-ghost note suggests, so skip it remotel
   rotation is write-file + kickstart. Do not "helpfully" put it back in the
   service env or a CI secret — removing it from those channels was a deliberate
   remediation (see CHANGELOG 2026-08-16).
-- **Remote taps resume the last thread and take over the desk by default** — `claude
-  --continue --remote-control` (flag form; the subcommand can't resume, and the flag form
-  doesn't take/need `--spawn` for same-dir) reopens the project's most recent thread, and
-  a live desktop session for that project is closed first so the phone isn't a second
-  client on it. Scoped by process cwd inside the project, never other projects. Falls back
-  to a fresh launch when there's nothing to resume. `RC_RESUME=off` / `RC_TAKEOVER=0` opt
-  out; resume is same-dir only.
+- **Remote taps resume the last thread, never open a second session, and pin the model** —
+  `claude --model <pin> --continue --remote-control` (flag form; the subcommand can't
+  resume, and the flag form doesn't take/need `--spawn` for same-dir) reopens the project's
+  most recent thread. If the project is already live in any form (launcher tmux, external
+  RC, desktop) the tap starts nothing and reports `already`; replacing one is `/stop` then
+  `/launch`, and a launch never closes a desktop session (the old takeover was retired
+  2026-09-19: it could not safely kill an external or desktop session in use). Falls back
+  to a fresh launch when there's nothing to resume. `RC_RESUME=off` opts out of resume;
+  resume is same-dir only. `--model` is always passed because resume otherwise keeps the
+  thread's last model.
 - **File share is `realpath`-confined to `~/rc-share`; HTTP does read + upload** — `/files`
   browses, downloads, and PUT-uploads into only `~/rc-share`, with one `within_share()`
   boundary so `..` and escaping symlinks are refused on reads *and* writes; the launcher

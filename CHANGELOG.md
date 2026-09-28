@@ -2,6 +2,28 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-28: Docs follow-ups from the README pass, docs only (no launcher code, config or
+  service change). RUNBOOK.md: rewrote "Resume & takeover" as "Resume & idempotent launch"
+  (a live session in any form returns `already`, nothing is closed, replace with `/stop`
+  then `/launch`; the `--model` pin and the `?model=` allowlist), replaced the `RC_TAKEOVER`
+  bullet with a note that it is retired, added the phone settings file and the fork/worktree
+  reachability caveat, reworded the Linux note to cover the liveness check and the ✕, dropped
+  the VS Code reattach caveat that only made sense for takeover, fixed Daily use (a 🖥 tap no
+  longer "takes it over", added 📡, the bands and the model dropdown), the module map
+  (`rc_settings.py` row, `rc_desk` also covers external RC, `rc_sessions` imports), and the
+  Design decisions bullet. MIGRATION-to-devbox.md (local, gitignored, so not in the commit):
+  the templated-env list wrongly included `RC_LAUNCHER_TOKEN` (the token is read from its
+  0600 file) and `RC_TAKEOVER`; corrected, and the cutover note now says idempotency, not
+  takeover. README: removed the temporary note about the stale docs and linked the renamed
+  RUNBOOK section. Added CLAUDE.md with a "Compact instructions" section, per the home-ops
+  2026-09-20 notice, so a lower auto-compact window keeps what only lives in the
+  conversation. Still stale, left alone on instruction: `install.sh` still writes
+  `RC_TAKEOVER` into the plist/unit and prints "disable with RC_TAKEOVER=0" (inert, nothing
+  reads it), and `docs/launcher.png` (2026-07-17) predates the bands, badges and model
+  dropdown. MIGRATION-to-devbox.md's "Required code change" section still describes the
+  bucketed-layout work as pending though `RC_PROJECT_GROUPS` shipped (its own header says
+  line numbers are stale; not rewritten).
+
 - 2026-09-28: README verification pass (12 source commits since 2026-09-13), docs only.
   Fixed: the launch paragraph still said every tap "closes any desktop session" and is
   toggled by `RC_TAKEOVER`; launch has been idempotent since 2026-09-19 and `RC_TAKEOVER`
@@ -10,12 +32,7 @@ Human-facing chronological record; newest first. One entry per change — what a
   has a user-agent branch for the wrapper's DownloadManager). Added what shipped without
   the README: a Session API table (`/launch` with `model=`, `/stop`, `/status`, `/create`,
   `/settings`, `/addroot`, `/version`), the picker's bands, badges, settings switches and
-  **+ root** link, and an `rc_settings.py` row in the module table. Still stale outside
-  this change's scope: RUNBOOK.md ("Resume & takeover", the `RC_TAKEOVER` bullet, the
-  Design decisions line about taking over the desk by default) and `install.sh` (writes
-  `RC_TAKEOVER` into the plist/unit and prints "disable with RC_TAKEOVER=0"); the README
-  says so in its launch paragraph and that sentence should go once those are fixed.
-  `docs/launcher.png` predates the bands, badges and model dropdown.
+  **+ root** link, and an `rc_settings.py` row in the module table.
 
 - 2026-09-19: Fix a Linux-only flaky-CI bug in RouteTest — its setUp mocked subprocess but,
   unlike MockedToolsCase, never forced `os.path.islink` to False, so desk detection read the

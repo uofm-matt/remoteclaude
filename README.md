@@ -46,10 +46,8 @@ starts nothing and says which kind is live, and it never closes a desktop sessio
 replace one, stop it (the ✕) and launch again. Every launched session is pinned to
 `claude-sonnet-5` with `--model` (`RC_MODEL`), because a resumed thread otherwise keeps
 whatever model it last ran on; the picker's model dropdown, or `/launch?model=`, picks
-another allowlisted model for that one launch. `RC_RESUME` sets the resume mode. (The
-desk takeover this section used to describe is retired: `RC_TAKEOVER` is no longer read,
-though `install.sh` still writes it and RUNBOOK.md's "Resume & takeover" section still
-describes it.)
+another allowlisted model for that one launch. `RC_RESUME` sets the resume mode. See
+[RUNBOOK.md](RUNBOOK.md#resume--idempotent-launch).
 
 You can also create a new project from the interface: tap the **+** button (or
 type a name that matches nothing and pick the "create & start" row). It makes the
