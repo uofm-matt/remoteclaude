@@ -19,12 +19,15 @@ SPAWN = os.environ.get("RC_SPAWN", "same-dir")  # same-dir | worktree | session
 RESUME = os.environ.get("RC_RESUME", "continue")  # continue | fork | off
 # Pinned model for every launched session, passed as --model on fresh AND resume launches.
 # Resume otherwise keeps the thread's last model (verified 2026-09-19: `--continue --model X`
-# overrides it), so without this a resumed thread silently drifts off Sonnet 5.
-MODEL = os.environ.get("RC_MODEL", "claude-sonnet-5")
+# overrides it), so without this a resumed thread silently drifts off the pinned model.
+# Sonnet 5.5 since 2026-09-30 (same $2/$10 price and 1M window as Sonnet 5).
+MODEL = os.environ.get("RC_MODEL", "claude-sonnet-5-5")
 # The models a /launch?model= request may pick. Short aliases map to full IDs; only these
 # full IDs ever reach the claude argv (a request value is never passed through as free text).
 MODEL_ALIASES = {
-    "sonnet": "claude-sonnet-5",
+    "sonnet": "claude-sonnet-5-5",
+    "sonnet55": "claude-sonnet-5-5",
+    "sonnet5": "claude-sonnet-5",
     "opus": "claude-opus-5",
     "fable": "claude-fable-5-1",
     "haiku": "claude-haiku-4-5-20251001",

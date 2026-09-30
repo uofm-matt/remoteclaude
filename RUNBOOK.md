@@ -129,7 +129,7 @@ if the session is somehow still there; on a
 archived, thread still resumable). The list is banded Pinned, Live, Recent and All, each
 collapsible; Recent leaves out anything already Live, and pins, recents and collapsed
 state live in localStorage. The header's "launch on" dropdown picks the model for the next
-launch (default Sonnet 5, the pin).
+launch (default Sonnet 5.5, the pin).
 
 To start a brand-new project, type a name that matches nothing: a dashed
 **＋ create & start** row appears (or just press Enter). It makes the folder under
@@ -183,10 +183,10 @@ SIGTERMed any desktop claude on the project before a resumed launch; it was reti
 2026-09-19 because it could never safely close an external or desktop session in use.)
 
 Every launch passes `--model`, fresh and resume alike: `RC_MODEL` (default
-`claude-sonnet-5`) unless the request names another. A resumed thread otherwise keeps the
+`claude-sonnet-5-5`, Sonnet 5.5) unless the request names another. A resumed thread otherwise keeps the
 model it last ran on, and `--model` overrides that (verified 2026-09-19), so without the
 pin a session drifts. `/launch?model=` (or the picker's "launch on" dropdown) takes
-`sonnet`, `opus`, `fable`, `haiku` or a full ID from the allowlist in `rc_settings.py`;
+`sonnet` (and `sonnet55`, both Sonnet 5.5), `sonnet5` (the previous Sonnet), `opus`, `fable`, `haiku` or a full ID from the allowlist in `rc_settings.py`;
 only those IDs ever reach the claude argv, and anything else returns `failed` listing the
 allowed values before anything spawns. A model requested for an already-live project is
 not applied (`already` carries a note); `/stop` then `/launch` to switch. `/status`

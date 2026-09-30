@@ -142,8 +142,8 @@ class RouteTest(ServerCase):
         # keys literal, so this goes red if __MODEL__ were dropped from page()'s fill dict)
         self.assertNotIn(b"__MODEL__", body)
         self.assertIn(f"pin: {rc_settings.MODEL}".encode(), body)
-        # the per-launch selector, defaulting to Sonnet 5 (empty value = the pinned default)
-        self.assertIn(b'<option value="" selected>Sonnet 5</option>', body)
+        # the per-launch selector, defaulting to Sonnet 5.5 (empty value = the pinned default)
+        self.assertIn(b'<option value="" selected>Sonnet 5.5</option>', body)
 
     def test_root_page_has_live_band_and_the_script_parses(self):
         # the Live band is sourced from /status state (running/extrc/desk), so it can't drift

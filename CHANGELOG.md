@@ -2,6 +2,18 @@
 
 Human-facing chronological record; newest first. One entry per change — what and why.
 
+- 2026-09-30: Pin moves from Sonnet 5 to Sonnet 5.5 (`claude-sonnet-5-5`), at Matt's request
+  after the release. `RC_MODEL` now defaults to it, the `?model=` alias `sonnet` (and a new
+  `sonnet55`) resolves to it, and `sonnet5` keeps the previous model reachable; the picker's
+  default option reads "Sonnet 5.5" and gains a "Sonnet 5" entry. Checked before the change:
+  the installed claude (2.1.285) knows the ID, a real `claude -p --model claude-sonnet-5-5`
+  call was served by `claude-sonnet-5-5` (modelUsage), and the pricing page lists Sonnet 5.5
+  at the same $2/$10 as Sonnet 5 with the 1M window. Effect on running sessions: none until
+  they are stopped and relaunched (a live session's model is never changed, and threads that
+  resume keep the pin passed at launch). Needs the launcher reload to take effect; an
+  operator-set `RC_MODEL` still wins. The global CLAUDE.md text that says launched sessions
+  are pinned to Sonnet 5 is now stale (home-ops owns it).
+
 - 2026-09-28: Docs follow-ups from the README pass, docs only (no launcher code, config or
   service change). RUNBOOK.md: rewrote "Resume & takeover" as "Resume & idempotent launch"
   (a live session in any form returns `already`, nothing is closed, replace with `/stop`

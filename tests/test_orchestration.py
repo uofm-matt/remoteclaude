@@ -82,10 +82,30 @@ class OrchestrationTest(MockedToolsCase):
         # a short alias resolves to the full ID; a full ID passes through; empty -> the pin;
         # anything else is None so the route can reject it rather than pass free text to argv
         self.assertEqual(rc_settings.resolve_model("opus"), "claude-opus-5")
+        # sonnet tracks the pin; the previous Sonnet stays reachable by its own alias
+        self.assertEqual(rc_settings.resolve_model("sonnet"), "claude-sonnet-5-5")
+        self.assertEqual(rc_settings.resolve_model("sonnet55"), "claude-sonnet-5-5")
+        self.assertEqual(rc_settings.resolve_model("sonnet5"), "claude-sonnet-5")
+        self.assertEqual(
+            rc_settings.resolve_model("claude-sonnet-5"), "claude-sonnet-5"
+        )
         self.assertEqual(rc_settings.resolve_model("claude-opus-5"), "claude-opus-5")
         self.assertEqual(rc_settings.resolve_model(""), rc_settings.MODEL)
         self.assertIsNone(rc_settings.resolve_model("gpt-9"))
         self.assertIsNone(rc_settings.resolve_model("claude-nonexistent"))
+
+    def test_default_pin_is_sonnet_5_5_when_unconfigured(self):
+        # a fresh interpreter with RC_MODEL unset, so no harness attr can mask the default;
+        # Popen because the harness replaces subprocess.run
+        env = {k: v for k, v in os.environ.items() if k != "RC_MODEL"}
+        proc_ = subprocess.Popen(
+            ["python3", "-c", "import rc_settings; print(rc_settings.MODEL)"],
+            stdout=subprocess.PIPE,
+            text=True,
+            env=env,
+            cwd=os.path.dirname(rc_settings.__file__),
+        )
+        self.assertEqual(proc_.communicate()[0].strip(), "claude-sonnet-5-5")
 
     def test_death_reason_classifies(self):
         self.responses = {"capture-pane": proc(stdout="please trust this workspace\n")}

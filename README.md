@@ -44,7 +44,7 @@ project already has a live session in any form (a launcher tmux session, a
 `claude --remote-control` started in a terminal, or a plain desktop claude), the tap
 starts nothing and says which kind is live, and it never closes a desktop session. To
 replace one, stop it (the ✕) and launch again. Every launched session is pinned to
-`claude-sonnet-5` with `--model` (`RC_MODEL`), because a resumed thread otherwise keeps
+`claude-sonnet-5-5` (Sonnet 5.5) with `--model` (`RC_MODEL`), because a resumed thread otherwise keeps
 whatever model it last ran on; the picker's model dropdown, or `/launch?model=`, picks
 another allowlisted model for that one launch. `RC_RESUME` sets the resume mode. See
 [RUNBOOK.md](RUNBOOK.md#resume--idempotent-launch).
@@ -82,7 +82,7 @@ directory name under `~/projects`.
 
 | Route | What it does |
 |---|---|
-| `/launch?proj=P[&model=M]` | Start P's session. `{"status":"launched"}`, `{"status":"already","kind":"tmux\|extrc\|desk"}` (nothing started; a `note` says a requested `model` was not applied), or `{"status":"failed","reason":...}`. `M` is `sonnet`, `opus`, `fable`, `haiku` or a full ID from the allowlist in `rc_settings.py`; anything else fails with the allowed list. Default is the `RC_MODEL` pin. |
+| `/launch?proj=P[&model=M]` | Start P's session. `{"status":"launched"}`, `{"status":"already","kind":"tmux\|extrc\|desk"}` (nothing started; a `note` says a requested `model` was not applied), or `{"status":"failed","reason":...}`. `M` is `sonnet` (Sonnet 5.5), `sonnet5`, `opus`, `fable`, `haiku` or a full ID from the allowlist in `rc_settings.py`; anything else fails with the allowed list. Default is the `RC_MODEL` pin. |
 | `/stop?proj=P[&desk=1]` | Close P's remote-control session, launcher tmux or external. `stopped`, `idle` (nothing matched), or `failed`. It never touches a desktop claude unless `desk=1`. |
 | `/status` | JSON: `projects`, `running` (launcher tmux), `extrc`, `desk`, per-session `states`, `git`, `roots`, `login`, `settings`, and the pinned `model`. |
 | `/create?proj=P` | Make the project, then launch it. |

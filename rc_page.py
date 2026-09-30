@@ -103,7 +103,7 @@ text-align:center}
 <div class=count id=count></div>
 <div class=hint id=hint style=display:none>long-press a project to pin it</div>
 <div class=model title="default model for a launch (pin: __MODEL__)">launch on
- <select id=modelsel><option value="" selected>Sonnet 5</option><option value=opus>Opus 5</option><option value=haiku>Haiku 4.5</option><option value=fable>Fable 5.1</option></select></div>
+ <select id=modelsel><option value="" selected>Sonnet 5.5</option><option value=sonnet5>Sonnet 5</option><option value=opus>Opus 5</option><option value=haiku>Haiku 4.5</option><option value=fable>Fable 5.1</option></select></div>
 </header>
 <div id=pinnedWrap class=band style=display:none><div class=sect data-sec=pinned>Pinned</div><ul id=pinned></ul></div>
 <div id=liveWrap class=band style=display:none><div class=sect data-sec=live>Live</div><ul id=live></ul></div>
@@ -200,7 +200,7 @@ async function go(n){
   if(RUNNING.has(n)||(EXT.has(n)&&!DESK.has(n))){toast(n+' already live');return;}
   STARTING.add(n);render();
   try{
-    const mv=$('#modelsel').value;  // "" = the pinned default (Sonnet 5)
+    const mv=$('#modelsel').value;  // "" = the pinned default (Sonnet 5.5)
     const r=await fetch('/launch?json=1&proj='+encodeURIComponent(n)+(mv?'&model='+mv:''));
     const j=await r.json();
     STARTING.delete(n);
